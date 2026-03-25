@@ -1,0 +1,46 @@
+package ee.kaarel.familybudgetapplication.repository;
+
+import ee.kaarel.familybudgetapplication.model.Account;
+import ee.kaarel.familybudgetapplication.model.Category;
+import ee.kaarel.familybudgetapplication.model.Transaction;
+import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.List;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+public interface TransactionRepository extends JpaRepository<Transaction, Long>, JpaSpecificationExecutor<Transaction> {
+
+    boolean existsByCategory(Category category);
+
+    @Query("""
+            select coalesce(sum(
+                case
+                    when t.toAccount = :account then t.amount
+                    when t.fromAccount = :account then -t.amount
+                    else 0
+                end
+            ), 0)
+            from Transaction t
+            where t.toAccount = :account or t.fromAccount = :account
+            """)
+    BigDecimal calculateBalance(@Param("account") Account account);
+
+    List<Transaction> findAllByFromAccountOrToAccount(Account fromAccount, Account toAccount);
+
+    @Query("""
+            select distinct t.category.id
+            from Transaction t
+            where t.category is not null
+            and t.category.id in :categoryIds
+            and year(t.createdAt) = :year
+            and month(t.createdAt) = :month
+            """)
+    List<Long> findPaidCategoryIdsForMonth(
+            @Param("categoryIds") Collection<Long> categoryIds,
+            @Param("year") int year,
+            @Param("month") int month
+    );
+}
