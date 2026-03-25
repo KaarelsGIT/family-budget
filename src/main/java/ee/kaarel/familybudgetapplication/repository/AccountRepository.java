@@ -13,4 +13,6 @@ public interface AccountRepository extends JpaRepository<Account, Long>, JpaSpec
     List<Account> findAllByOwner(User owner);
 
     Optional<Account> findByOwnerAndTypeAndIsDefaultTrue(User owner, AccountType type);
+
+    void deleteAllByOwner(User owner);
 }

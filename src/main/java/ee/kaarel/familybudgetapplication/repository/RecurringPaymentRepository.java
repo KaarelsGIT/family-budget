@@ -9,4 +9,6 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface RecurringPaymentRepository extends JpaRepository<RecurringPayment, Long>, JpaSpecificationExecutor<RecurringPayment> {
 
     List<RecurringPayment> findAllByOwner(User owner);
+
+    void deleteAllByOwner(User owner);
 }

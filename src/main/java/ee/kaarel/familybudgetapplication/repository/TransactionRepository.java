@@ -3,11 +3,13 @@ package ee.kaarel.familybudgetapplication.repository;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.Transaction;
+import ee.kaarel.familybudgetapplication.model.User;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,6 +31,23 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
     BigDecimal calculateBalance(@Param("account") Account account);
 
     List<Transaction> findAllByFromAccountOrToAccount(Account fromAccount, Account toAccount);
+
+    @Modifying
+    @Query("""
+            delete from Transaction t
+            where t.createdBy = :user
+            or t.fromAccount.id in (
+                select a.id
+                from Account a
+                where a.owner = :user
+            )
+            or t.toAccount.id in (
+                select a.id
+                from Account a
+                where a.owner = :user
+            )
+            """)
+    void deleteAllLinkedToUser(@Param("user") User user);
 
     @Query("""
             select distinct t.category.id

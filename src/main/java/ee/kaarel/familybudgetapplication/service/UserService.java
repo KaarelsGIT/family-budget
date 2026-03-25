@@ -10,7 +10,12 @@ import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
+import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
+import ee.kaarel.familybudgetapplication.repository.RecurringPaymentRepository;
+import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
+import java.util.Comparator;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,17 +26,26 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
+    private final TransactionRepository transactionRepository;
+    private final RecurringPaymentRepository recurringPaymentRepository;
+    private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
 
     public UserService(
             UserRepository userRepository,
             AccountRepository accountRepository,
+            TransactionRepository transactionRepository,
+            RecurringPaymentRepository recurringPaymentRepository,
+            NotificationRepository notificationRepository,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService
     ) {
         this.userRepository = userRepository;
         this.accountRepository = accountRepository;
+        this.transactionRepository = transactionRepository;
+        this.recurringPaymentRepository = recurringPaymentRepository;
+        this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
     }
@@ -64,6 +78,19 @@ public class UserService {
         mainAccount.setDeletionRequested(false);
         accountRepository.save(mainAccount);
         return toResponse(savedUser);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponse> getUsers() {
+        User currentUser = currentUserService.getCurrentUser();
+        if (currentUser.getRole() != Role.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only admins can view all users");
+        }
+
+        return userRepository.findAll().stream()
+                .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
+                .map(this::toResponse)
+                .toList();
     }
 
     @Transactional
@@ -100,6 +127,31 @@ public class UserService {
             targetUser.setStatus(UserStatus.ACTIVE);
         }
         return toResponse(userRepository.save(targetUser));
+    }
+
+    @Transactional
+    public void deleteUser(Long id) {
+        User currentUser = currentUserService.getCurrentUser();
+        if (currentUser.getRole() != Role.ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only admins can delete users");
+        }
+
+        User targetUser = userRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (currentUser.getId().equals(id)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Admin cannot delete their own user");
+        }
+
+        if (targetUser.getRole() == Role.ADMIN) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Admin users cannot be deleted");
+        }
+
+        transactionRepository.deleteAllLinkedToUser(targetUser);
+        recurringPaymentRepository.deleteAllByOwner(targetUser);
+        notificationRepository.deleteAllByUser(targetUser);
+        accountRepository.deleteAllByOwner(targetUser);
+        userRepository.delete(targetUser);
     }
 
     @Transactional(readOnly = true)

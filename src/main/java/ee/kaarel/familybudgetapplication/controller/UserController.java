@@ -5,6 +5,8 @@ import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.service.UserService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -22,6 +24,11 @@ public class UserController {
         this.userService = userService;
     }
 
+    @GetMapping
+    public ApiResponse<?> getUsers() {
+        return new ApiResponse<>(userService.getUsers());
+    }
+
     @PostMapping
     public ApiResponse<?> createUser(@Valid @RequestBody CreateUserRequest request) {
         return new ApiResponse<>(userService.createUser(request));
@@ -30,5 +37,11 @@ public class UserController {
     @PutMapping("/{id}")
     public ApiResponse<?> updateUser(@PathVariable Long id, @Valid @RequestBody UpdateUserRequest request) {
         return new ApiResponse<>(userService.updateUser(id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public ApiResponse<?> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return new ApiResponse<>("User deleted successfully");
     }
 }
