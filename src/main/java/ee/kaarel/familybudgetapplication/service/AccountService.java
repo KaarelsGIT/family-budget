@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.service;
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.account.AccountResponse;
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
+import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
@@ -53,14 +54,29 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountResponse createSavingsAccount(CreateAccountRequest request) {
+    public AccountResponse createAccount(CreateAccountRequest request) {
         User currentUser = currentUserService.getCurrentUser();
         Account account = new Account();
         account.setName(request.name());
         account.setOwner(currentUser);
-        account.setType(AccountType.SAVINGS);
+        account.setType(request.type());
         account.setDefault(false);
         account.setDeletionRequested(false);
+        account.setDeletionRequestedAt(null);
+        return toResponse(accountRepository.save(account));
+    }
+
+    @Transactional
+    public AccountResponse updateAccount(Long id, UpdateAccountRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+        Account account = getAccount(id);
+        ensureCanAccessAccount(currentUser, account);
+
+        if (!canRenameAccount(currentUser, account)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot rename this account");
+        }
+
+        account.setName(request.name());
         return toResponse(accountRepository.save(account));
     }
 
@@ -129,6 +145,14 @@ public class AccountService {
         return account.getOwner().getId().equals(currentUser.getId()) || account.getOwner().getRole() == Role.CHILD;
     }
 
+    public boolean canRenameAccount(User currentUser, Account account) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+
+        return account.getOwner().getId().equals(currentUser.getId());
+    }
+
     private Specification<Account> visibleAccountSpecification(User currentUser) {
         return (root, query, cb) -> {
             if (query != null && !Long.class.equals(query.getResultType()) && !long.class.equals(query.getResultType())) {
@@ -156,6 +180,7 @@ public class AccountService {
                 account.getName(),
                 account.getOwner().getId(),
                 account.getOwner().getUsername(),
+                account.getOwner().getRole(),
                 account.getType(),
                 account.isDefault(),
                 account.isDeletionRequested(),
