@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.dto.transaction;
 
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 
 public record TransactionResponse(
@@ -16,6 +17,7 @@ public record TransactionResponse(
         String categoryName,
         Long createdById,
         String createdByUsername,
+        LocalDate transactionDate,
         OffsetDateTime createdAt,
         String comment
 ) {

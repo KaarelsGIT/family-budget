@@ -26,6 +26,7 @@ public class DataInitializer {
             admin.setPassword(passwordEncoder.encode("admin"));
             admin.setRole(Role.ADMIN);
             admin.setStatus(UserStatus.ACTIVE);
+            admin.setPreferredLanguage("et");
             User savedAdmin = userRepository.save(admin);
 
             Account account = new Account();

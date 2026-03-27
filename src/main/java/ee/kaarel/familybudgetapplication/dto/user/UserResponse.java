@@ -7,6 +7,8 @@ public record UserResponse(
         Long id,
         String username,
         Role role,
-        UserStatus status
+        UserStatus status,
+        String preferredLanguage,
+        Long defaultMainAccountId
 ) {
 }

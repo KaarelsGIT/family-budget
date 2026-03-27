@@ -8,6 +8,7 @@ public record LoginResponse(
         String username,
         Role role,
         UserStatus status,
+        String preferredLanguage,
         String authType
 ) {
 }

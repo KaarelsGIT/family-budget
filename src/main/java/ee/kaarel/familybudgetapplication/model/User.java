@@ -39,6 +39,9 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserStatus status;
 
+    @Column(nullable = false, length = 5)
+    private String preferredLanguage = "et";
+
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Account> accounts = new ArrayList<>();
 

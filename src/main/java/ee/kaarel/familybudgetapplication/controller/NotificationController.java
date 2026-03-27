@@ -25,8 +25,19 @@ public class NotificationController {
         return notificationService.getNotifications(pageable);
     }
 
+    @GetMapping("/unread-count")
+    public ApiResponse<?> getUnreadCount() {
+        return new ApiResponse<>(notificationService.getUnreadCount());
+    }
+
     @PutMapping("/{id}/read")
     public ApiResponse<?> markAsRead(@PathVariable Long id) {
         return new ApiResponse<>(notificationService.markAsRead(id));
+    }
+
+    @PutMapping("/read-all")
+    public ApiResponse<?> markAllAsRead() {
+        notificationService.markAllAsRead();
+        return new ApiResponse<>("Notifications marked as read");
     }
 }

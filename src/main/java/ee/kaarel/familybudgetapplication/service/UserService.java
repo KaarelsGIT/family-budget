@@ -68,6 +68,7 @@ public class UserService {
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setRole(request.role());
         user.setStatus(UserStatus.PENDING);
+        user.setPreferredLanguage("et");
         User savedUser = userRepository.save(user);
 
         Account mainAccount = new Account();
@@ -81,8 +82,15 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<UserResponse> getUsers() {
+    public List<UserResponse> getUsers(boolean selectable) {
         User currentUser = currentUserService.getCurrentUser();
+        if (selectable) {
+            return userRepository.findAll().stream()
+                    .filter(user -> canSelectUser(currentUser, user))
+                    .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
+                    .map(this::toResponse)
+                    .toList();
+        }
         if (currentUser.getRole() != Role.ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, "Only admins can view all users");
         }
@@ -91,6 +99,13 @@ public class UserService {
                 .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public void ensureSelectableUser(User currentUser, User targetUser) {
+        if (!canSelectUser(currentUser, targetUser)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user");
+        }
     }
 
     @Transactional
@@ -122,6 +137,10 @@ public class UserService {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Admin role changes are not supported");
             }
             targetUser.setRole(request.role());
+        }
+        if (request.preferredLanguage() != null) {
+            validatePreferredLanguage(request.preferredLanguage());
+            targetUser.setPreferredLanguage(request.preferredLanguage());
         }
         if (targetUser.getStatus() == UserStatus.PENDING) {
             targetUser.setStatus(UserStatus.ACTIVE);
@@ -161,6 +180,37 @@ public class UserService {
     }
 
     public UserResponse toResponse(User user) {
-        return new UserResponse(user.getId(), user.getUsername(), user.getRole(), user.getStatus());
+        Long defaultMainAccountId = accountRepository.findByOwnerAndTypeAndIsDefaultTrue(user, AccountType.MAIN)
+                .map(Account::getId)
+                .orElse(null);
+        return new UserResponse(
+                user.getId(),
+                user.getUsername(),
+                user.getRole(),
+                user.getStatus(),
+                user.getPreferredLanguage(),
+                defaultMainAccountId
+        );
+    }
+
+    private void validatePreferredLanguage(String preferredLanguage) {
+        if (!"et".equals(preferredLanguage) && !"en".equals(preferredLanguage) && !"fi".equals(preferredLanguage)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported language");
+        }
+    }
+
+    private boolean canSelectUser(User currentUser, User targetUser) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+        if (currentUser.getRole() == Role.PARENT) {
+            return targetUser.getId().equals(currentUser.getId())
+                    || targetUser.getRole() == Role.ADMIN
+                    || targetUser.getRole() == Role.CHILD;
+        }
+        return targetUser.getId().equals(currentUser.getId())
+                || targetUser.getRole() == Role.ADMIN
+                || targetUser.getRole() == Role.PARENT
+                || targetUser.getRole() == Role.CHILD;
     }
 }

@@ -14,7 +14,9 @@ import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import jakarta.persistence.criteria.JoinType;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -32,6 +34,7 @@ public class TransactionService {
     private final CategoryService categoryService;
     private final NotificationService notificationService;
     private final RecurringPaymentService recurringPaymentService;
+    private final UserService userService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
@@ -39,7 +42,8 @@ public class TransactionService {
             AccountService accountService,
             CategoryService categoryService,
             NotificationService notificationService,
-            RecurringPaymentService recurringPaymentService
+            RecurringPaymentService recurringPaymentService,
+            UserService userService
     ) {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
@@ -47,6 +51,7 @@ public class TransactionService {
         this.categoryService = categoryService;
         this.notificationService = notificationService;
         this.recurringPaymentService = recurringPaymentService;
+        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
@@ -55,11 +60,11 @@ public class TransactionService {
             Long userId,
             Long categoryId,
             Long subcategoryId,
-            OffsetDateTime from,
-            OffsetDateTime to
+            LocalDate from,
+            LocalDate to
     ) {
         User currentUser = currentUserService.getCurrentUser();
-        Pageable sorted = PageableUtils.withDefaultSort(pageable, Sort.by(Sort.Order.desc("createdAt")));
+        Pageable sorted = PageableUtils.withDefaultSort(pageable, Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
         Page<Transaction> page = transactionRepository.findAll(
                 visibleTransactions(currentUser, userId, categoryId, subcategoryId, from, to),
                 sorted
@@ -93,10 +98,16 @@ public class TransactionService {
         transaction.setToAccount(toAccount);
         transaction.setCategory(category);
         transaction.setCreatedBy(currentUser);
+        transaction.setTransactionDate(resolveTransactionDate(request));
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
-        recurringPaymentService.markRecurringAsPaidByTransaction(category, toAccount.getOwner(), saved.getCreatedAt().getYear(), saved.getCreatedAt().getMonthValue());
+        recurringPaymentService.markRecurringAsPaidByTransaction(
+                category,
+                toAccount.getOwner(),
+                saved.getTransactionDate().getYear(),
+                saved.getTransactionDate().getMonthValue()
+        );
         return toResponse(saved);
     }
 
@@ -116,10 +127,16 @@ public class TransactionService {
         transaction.setFromAccount(fromAccount);
         transaction.setCategory(category);
         transaction.setCreatedBy(currentUser);
+        transaction.setTransactionDate(resolveTransactionDate(request));
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
-        recurringPaymentService.markRecurringAsPaidByTransaction(category, fromAccount.getOwner(), saved.getCreatedAt().getYear(), saved.getCreatedAt().getMonthValue());
+        recurringPaymentService.markRecurringAsPaidByTransaction(
+                category,
+                fromAccount.getOwner(),
+                saved.getTransactionDate().getYear(),
+                saved.getTransactionDate().getMonthValue()
+        );
         return toResponse(saved);
     }
 
@@ -140,15 +157,17 @@ public class TransactionService {
         transaction.setFromAccount(fromAccount);
         transaction.setToAccount(toAccount);
         transaction.setCreatedBy(currentUser);
+        transaction.setTransactionDate(resolveTransactionDate(request));
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
 
         if (!fromAccount.getOwner().getId().equals(toAccount.getOwner().getId())) {
-            notificationService.createNotification(
+            notificationService.notifyMoneyReceived(
                     toAccount.getOwner(),
-                    NotificationType.MONEY_RECEIVED,
-                    "You received " + request.amount() + " from " + fromAccount.getOwner().getUsername() + " to account " + toAccount.getName()
+                    fromAccount.getOwner(),
+                    request.amount(),
+                    toAccount.getName()
             );
         }
         return toResponse(saved);
@@ -168,20 +187,19 @@ public class TransactionService {
     }
 
     private void validateTransfer(User currentUser, Account fromAccount, Account toAccount) {
-        accountService.ensureCanAccessAccount(currentUser, fromAccount);
-        accountService.ensureCanAccessAccount(currentUser, toAccount);
         validateAccountModification(currentUser, fromAccount);
+        if (!fromAccount.getOwner().getId().equals(currentUser.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You can only transfer from your own accounts");
+        }
 
         boolean sameOwner = fromAccount.getOwner().getId().equals(toAccount.getOwner().getId());
         if (sameOwner) {
             return;
         }
 
-        if (fromAccount.getType() != AccountType.MAIN || toAccount.getType() != AccountType.MAIN) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers between users must be MAIN to MAIN");
-        }
-        if (currentUser.getRole() == Role.CHILD && !fromAccount.getOwner().getId().equals(currentUser.getId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Children can only transfer from their own MAIN account");
+        userService.ensureSelectableUser(currentUser, toAccount.getOwner());
+        if (toAccount.getType() != AccountType.MAIN || !toAccount.isDefault()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers to other users must go to their default MAIN account");
         }
     }
 
@@ -190,8 +208,8 @@ public class TransactionService {
             Long userId,
             Long categoryId,
             Long subcategoryId,
-            OffsetDateTime from,
-            OffsetDateTime to
+            LocalDate from,
+            LocalDate to
     ) {
         return (root, query, cb) -> {
             if (query != null && !Long.class.equals(query.getResultType()) && !long.class.equals(query.getResultType())) {
@@ -236,10 +254,30 @@ public class TransactionService {
                 predicates = cb.and(predicates, cb.equal(root.get("category").get("id"), subcategoryId));
             }
             if (from != null) {
-                predicates = cb.and(predicates, cb.greaterThanOrEqualTo(root.get("createdAt"), from));
+                OffsetDateTime fromDateTime = from.atStartOfDay().atOffset(ZoneOffset.UTC);
+                predicates = cb.and(predicates, cb.or(
+                        cb.and(
+                                cb.isNotNull(root.get("transactionDate")),
+                                cb.greaterThanOrEqualTo(root.get("transactionDate"), from)
+                        ),
+                        cb.and(
+                                cb.isNull(root.get("transactionDate")),
+                                cb.greaterThanOrEqualTo(root.get("createdAt"), fromDateTime)
+                        )
+                ));
             }
             if (to != null) {
-                predicates = cb.and(predicates, cb.lessThanOrEqualTo(root.get("createdAt"), to));
+                OffsetDateTime toDateTime = to.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC).minusNanos(1);
+                predicates = cb.and(predicates, cb.or(
+                        cb.and(
+                                cb.isNotNull(root.get("transactionDate")),
+                                cb.lessThanOrEqualTo(root.get("transactionDate"), to)
+                        ),
+                        cb.and(
+                                cb.isNull(root.get("transactionDate")),
+                                cb.lessThanOrEqualTo(root.get("createdAt"), toDateTime)
+                        )
+                ));
             }
             return predicates;
         };
@@ -258,8 +296,15 @@ public class TransactionService {
                 transaction.getCategory() == null ? null : transaction.getCategory().getName(),
                 transaction.getCreatedBy().getId(),
                 transaction.getCreatedBy().getUsername(),
+                transaction.getTransactionDate() == null ? transaction.getCreatedAt().toLocalDate() : transaction.getTransactionDate(),
                 transaction.getCreatedAt(),
                 transaction.getComment()
         );
+    }
+
+    private LocalDate resolveTransactionDate(CreateTransactionRequest request) {
+        return request.transactionDate() != null
+                ? request.transactionDate()
+                : OffsetDateTime.now().toLocalDate();
     }
 }

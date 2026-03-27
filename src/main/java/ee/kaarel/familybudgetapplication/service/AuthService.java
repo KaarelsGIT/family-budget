@@ -35,7 +35,6 @@ public class AuthService {
             user.setStatus(UserStatus.ACTIVE);
             user = userRepository.save(user);
         }
-
         return toResponse(user);
     }
 
@@ -57,6 +56,6 @@ public class AuthService {
     }
 
     private LoginResponse toResponse(User user) {
-        return new LoginResponse(user.getId(), user.getUsername(), user.getRole(), user.getStatus(), "BASIC");
+        return new LoginResponse(user.getId(), user.getUsername(), user.getRole(), user.getStatus(), user.getPreferredLanguage(), "BASIC");
     }
 }
