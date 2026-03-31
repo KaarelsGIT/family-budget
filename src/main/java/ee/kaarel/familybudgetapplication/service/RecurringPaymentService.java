@@ -12,9 +12,11 @@ import ee.kaarel.familybudgetapplication.model.RecurringPayment;
 import ee.kaarel.familybudgetapplication.model.RecurringPaymentStatus;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
+import ee.kaarel.familybudgetapplication.repository.CategoryRepository;
 import ee.kaarel.familybudgetapplication.repository.RecurringPaymentRepository;
 import ee.kaarel.familybudgetapplication.repository.RecurringPaymentStatusRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
+import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
 import java.util.List;
@@ -27,6 +29,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class RecurringPaymentService {
@@ -36,6 +39,8 @@ public class RecurringPaymentService {
     private final TransactionRepository transactionRepository;
     private final CurrentUserService currentUserService;
     private final CategoryService categoryService;
+    private final CategoryRepository categoryRepository;
+    private final UserRepository userRepository;
     private final NotificationService notificationService;
 
     public RecurringPaymentService(
@@ -44,6 +49,8 @@ public class RecurringPaymentService {
             TransactionRepository transactionRepository,
             CurrentUserService currentUserService,
             CategoryService categoryService,
+            CategoryRepository categoryRepository,
+            UserRepository userRepository,
             NotificationService notificationService
     ) {
         this.recurringPaymentRepository = recurringPaymentRepository;
@@ -51,6 +58,8 @@ public class RecurringPaymentService {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
         this.categoryService = categoryService;
+        this.categoryRepository = categoryRepository;
+        this.userRepository = userRepository;
         this.notificationService = notificationService;
     }
 
@@ -158,6 +167,50 @@ public class RecurringPaymentService {
                         String message = "Recurring payment '" + payment.getName() + "' is unpaid for " + now.getMonth() + " " + now.getYear();
                         notificationService.createNotificationIfAbsent(payment.getOwner(), NotificationType.RECURRING_PAYMENT_UNPAID, message);
                     }
+                });
+    }
+
+    @Scheduled(cron = "0 0 8 * * *")
+    @Transactional
+    public void notifyUpcomingRecurringCategories() {
+        LocalDate today = LocalDate.now();
+        LocalDate dueDate = today.plusDays(1);
+
+        List<Category> recurringCategories = categoryRepository.findAll((root, query, cb) -> {
+            if (query != null && !Long.class.equals(query.getResultType()) && !long.class.equals(query.getResultType())) {
+                root.fetch("parentCategory", JoinType.LEFT);
+                query.distinct(true);
+            }
+            return cb.and(
+                    cb.equal(root.get("type"), ee.kaarel.familybudgetapplication.model.TransactionType.EXPENSE),
+                    cb.isTrue(root.get("recurring")),
+                    cb.isNotNull(root.get("parentCategory")),
+                    cb.equal(root.get("dueDayOfMonth"), dueDate.getDayOfMonth())
+            );
+        });
+
+        if (recurringCategories.isEmpty()) {
+            return;
+        }
+
+        Set<Long> categoryIds = recurringCategories.stream().map(Category::getId).collect(Collectors.toSet());
+        Set<Long> paidCategoryIds = transactionRepository.findPaidCategoryIdsByTransactionDateForMonth(
+                        categoryIds,
+                        today.getYear(),
+                        today.getMonthValue()
+                )
+                .stream()
+                .collect(Collectors.toSet());
+
+        recurringCategories.stream()
+                .filter(category -> !paidCategoryIds.contains(category.getId()))
+                .forEach(category -> {
+                    User owner = userRepository.findById(category.getUserId()).orElse(null);
+                    if (owner == null) {
+                        return;
+                    }
+                    String message = "Recurring category '" + category.getName() + "' is due on " + dueDate;
+                    notificationService.createNotificationIfAbsent(owner, NotificationType.RECURRING_PAYMENT_UNPAID, message, "PAY", category.getId());
                 });
     }
 

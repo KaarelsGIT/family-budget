@@ -62,4 +62,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             @Param("year") int year,
             @Param("month") int month
     );
+
+    @Query("""
+            select distinct t.category.id
+            from Transaction t
+            where t.category is not null
+            and t.category.id in :categoryIds
+            and t.transactionDate is not null
+            and year(t.transactionDate) = :year
+            and month(t.transactionDate) = :month
+            """)
+    List<Long> findPaidCategoryIdsByTransactionDateForMonth(
+            @Param("categoryIds") Collection<Long> categoryIds,
+            @Param("year") int year,
+            @Param("month") int month
+    );
 }

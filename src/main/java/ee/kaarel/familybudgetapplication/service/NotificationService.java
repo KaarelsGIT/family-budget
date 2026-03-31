@@ -40,10 +40,22 @@ public class NotificationService {
 
     @Transactional
     public void createNotification(User user, NotificationType type, String message) {
+        createNotification(user, type, message, null, null);
+    }
+
+    @Transactional
+    public void createNotification(User user, NotificationType type, String message, String action) {
+        createNotification(user, type, message, action, null);
+    }
+
+    @Transactional
+    public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId) {
         Notification notification = new Notification();
         notification.setUser(user);
         notification.setType(type);
         notification.setMessage(message);
+        notification.setAction(action);
+        notification.setRelatedCategoryId(relatedCategoryId);
         notification.setRead(false);
         notification.setCreatedAt(OffsetDateTime.now());
         notificationRepository.save(notification);
@@ -53,6 +65,20 @@ public class NotificationService {
     public void createNotificationIfAbsent(User user, NotificationType type, String message) {
         if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
             createNotification(user, type, message);
+        }
+    }
+
+    @Transactional
+    public void createNotificationIfAbsent(User user, NotificationType type, String message, String action) {
+        if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
+            createNotification(user, type, message, action);
+        }
+    }
+
+    @Transactional
+    public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId) {
+        if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
+            createNotification(user, type, message, action, relatedCategoryId);
         }
     }
 
@@ -112,6 +138,8 @@ public class NotificationService {
                 notification.getId(),
                 notification.getType(),
                 notification.getMessage(),
+                notification.getAction(),
+                notification.getRelatedCategoryId(),
                 notification.isRead(),
                 notification.getCreatedAt()
         );

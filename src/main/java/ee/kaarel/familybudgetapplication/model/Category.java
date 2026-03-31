@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -17,12 +18,18 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "categories")
+@Table(
+        name = "categories",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "parent_category_id", "name"})
+)
 public class Category {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false, length = 120)
     private String name;
@@ -34,6 +41,12 @@ public class Category {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_category_id")
     private Category parentCategory;
+
+    @Column(name = "is_recurring", nullable = false)
+    private boolean recurring = false;
+
+    @Column(name = "due_day_of_month")
+    private Integer dueDayOfMonth;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "category_group", nullable = false, length = 20)

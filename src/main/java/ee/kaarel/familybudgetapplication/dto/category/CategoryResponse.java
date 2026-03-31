@@ -5,10 +5,13 @@ import ee.kaarel.familybudgetapplication.model.TransactionType;
 
 public record CategoryResponse(
         Long id,
+        Long userId,
         String name,
         TransactionType type,
         Long parentCategoryId,
         String parentCategoryName,
-        CategoryGroup group
+        CategoryGroup group,
+        boolean isRecurring,
+        Integer dueDayOfMonth
 ) {
 }

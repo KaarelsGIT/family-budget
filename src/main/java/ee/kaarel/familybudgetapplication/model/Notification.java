@@ -36,6 +36,12 @@ public class Notification {
     @Column(nullable = false, length = 500)
     private String message;
 
+    @Column(length = 20)
+    private String action;
+
+    @Column(name = "related_category_id")
+    private Long relatedCategoryId;
+
     @Column(nullable = false)
     private boolean isRead;
 

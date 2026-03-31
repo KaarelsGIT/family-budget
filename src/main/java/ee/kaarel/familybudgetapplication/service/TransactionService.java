@@ -59,14 +59,13 @@ public class TransactionService {
             Pageable pageable,
             Long userId,
             Long categoryId,
-            Long subcategoryId,
             LocalDate from,
             LocalDate to
     ) {
         User currentUser = currentUserService.getCurrentUser();
         Pageable sorted = PageableUtils.withDefaultSort(pageable, Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
         Page<Transaction> page = transactionRepository.findAll(
-                visibleTransactions(currentUser, userId, categoryId, subcategoryId, from, to),
+                visibleTransactions(currentUser, userId, categoryId, from, to),
                 sorted
         );
         return new ListResponse<>(page.map(this::toResponse).getContent(), page.getTotalElements());
@@ -75,21 +74,27 @@ public class TransactionService {
     @Transactional
     public TransactionResponse create(CreateTransactionRequest request) {
         User currentUser = currentUserService.getCurrentUser();
-        return switch (request.type()) {
-            case INCOME -> createIncome(currentUser, request);
-            case EXPENSE -> createExpense(currentUser, request);
-            case TRANSFER -> createTransfer(currentUser, request);
-        };
+
+        if (request.categoryId() != null) {
+            Category category = categoryService.getCategory(request.categoryId());
+            categoryService.ensureVisible(currentUser, category);
+
+            return switch (category.getType()) {
+                case INCOME -> createIncome(currentUser, request, category);
+                case EXPENSE -> createExpense(currentUser, request, category);
+                case TRANSFER -> throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer categories are not supported for categorized transactions");
+            };
+        }
+
+        return createTransfer(currentUser, request);
     }
 
-    private TransactionResponse createIncome(User currentUser, CreateTransactionRequest request) {
+    private TransactionResponse createIncome(User currentUser, CreateTransactionRequest request, Category category) {
         if (request.toAccountId() == null || request.categoryId() == null || request.fromAccountId() != null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Income requires toAccount and category only");
         }
         Account toAccount = accountService.getAccount(request.toAccountId());
         validateAccountModification(currentUser, toAccount);
-        Category category = categoryService.getCategory(request.categoryId());
-        categoryService.ensureVisible(currentUser, category);
         validateCategoryType(category, TransactionType.INCOME);
 
         Transaction transaction = new Transaction();
@@ -111,14 +116,12 @@ public class TransactionService {
         return toResponse(saved);
     }
 
-    private TransactionResponse createExpense(User currentUser, CreateTransactionRequest request) {
+    private TransactionResponse createExpense(User currentUser, CreateTransactionRequest request, Category category) {
         if (request.fromAccountId() == null || request.categoryId() == null || request.toAccountId() != null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Expense requires fromAccount and category only");
         }
         Account fromAccount = accountService.getAccount(request.fromAccountId());
         validateAccountModification(currentUser, fromAccount);
-        Category category = categoryService.getCategory(request.categoryId());
-        categoryService.ensureVisible(currentUser, category);
         validateCategoryType(category, TransactionType.EXPENSE);
 
         Transaction transaction = new Transaction();
@@ -207,7 +210,6 @@ public class TransactionService {
             User currentUser,
             Long userId,
             Long categoryId,
-            Long subcategoryId,
             LocalDate from,
             LocalDate to
     ) {
@@ -228,13 +230,6 @@ public class TransactionService {
                         cb.equal(root.get("fromAccount").get("owner").get("id"), currentUser.getId()),
                         cb.equal(root.get("toAccount").get("owner").get("id"), currentUser.getId())
                 ));
-            } else if (currentUser.getRole() == Role.PARENT) {
-                predicates = cb.and(predicates, cb.or(
-                        cb.equal(root.get("fromAccount").get("owner").get("id"), currentUser.getId()),
-                        cb.equal(root.get("toAccount").get("owner").get("id"), currentUser.getId()),
-                        cb.equal(root.get("fromAccount").get("owner").get("role"), Role.CHILD),
-                        cb.equal(root.get("toAccount").get("owner").get("role"), Role.CHILD)
-                ));
             }
 
             if (userId != null) {
@@ -249,9 +244,6 @@ public class TransactionService {
                         cb.equal(root.get("category").get("id"), categoryId),
                         cb.equal(root.get("category").get("parentCategory").get("id"), categoryId)
                 ));
-            }
-            if (subcategoryId != null) {
-                predicates = cb.and(predicates, cb.equal(root.get("category").get("id"), subcategoryId));
             }
             if (from != null) {
                 OffsetDateTime fromDateTime = from.atStartOfDay().atOffset(ZoneOffset.UTC);

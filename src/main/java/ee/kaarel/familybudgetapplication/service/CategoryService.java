@@ -12,6 +12,7 @@ import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.CategoryRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import jakarta.persistence.criteria.JoinType;
+import java.util.Locale;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -53,7 +54,16 @@ public class CategoryService {
         validateGroupAccess(currentUser, request.group());
 
         Category category = new Category();
-        apply(category, request.name(), request.type(), request.parentCategoryId(), request.group());
+        apply(
+                category,
+                currentUser,
+                request.name(),
+                request.type(),
+                request.parentCategoryId(),
+                request.group(),
+                request.isRecurring(),
+                request.dueDayOfMonth()
+        );
         return toResponse(categoryRepository.save(category));
     }
 
@@ -67,8 +77,19 @@ public class CategoryService {
         var type = request.type() != null ? request.type() : category.getType();
         Long parentId = request.parentCategoryId() != null ? request.parentCategoryId() : category.getParentCategory() == null ? null : category.getParentCategory().getId();
         CategoryGroup group = request.group() != null ? request.group() : category.getGroup();
+        Boolean isRecurring = request.isRecurring() != null ? request.isRecurring() : category.isRecurring();
+        Integer dueDayOfMonth;
+        if (request.isRecurring() != null && !request.isRecurring()) {
+            dueDayOfMonth = null;
+        } else if (request.isRecurring() != null && request.dueDayOfMonth() == null && category.isRecurring()) {
+            dueDayOfMonth = category.getDueDayOfMonth();
+        } else if (request.isRecurring() != null && request.isRecurring()) {
+            dueDayOfMonth = request.dueDayOfMonth() != null ? request.dueDayOfMonth() : category.getDueDayOfMonth();
+        } else {
+            dueDayOfMonth = request.dueDayOfMonth() != null ? request.dueDayOfMonth() : category.getDueDayOfMonth();
+        }
         validateGroupAccess(currentUser, group);
-        apply(category, name, type, parentId, group);
+        apply(category, currentUser, name, type, parentId, group, isRecurring, dueDayOfMonth);
         return toResponse(categoryRepository.save(category));
     }
 
@@ -107,10 +128,30 @@ public class CategoryService {
         }
     }
 
-    private void apply(Category category, String name, TransactionType type, Long parentCategoryId, CategoryGroup group) {
-        category.setName(name);
-        category.setType(type);
+    private void apply(
+            Category category,
+            User currentUser,
+            String name,
+            TransactionType type,
+            Long parentCategoryId,
+            CategoryGroup group,
+            Boolean isRecurring,
+            Integer dueDayOfMonth
+    ) {
+        String normalizedName = normalizeName(name);
+        TransactionType resolvedType = type;
+        boolean recurring = Boolean.TRUE.equals(isRecurring);
+        Integer resolvedDueDayOfMonth = recurring ? dueDayOfMonth : null;
+
+        validateCategoryShape(resolvedType, parentCategoryId, recurring, resolvedDueDayOfMonth);
+        ensureUniqueCategory(currentUser, category.getId(), normalizedName, parentCategoryId);
+
+        category.setUserId(currentUser.getId());
+        category.setName(normalizedName);
+        category.setType(resolvedType);
         category.setGroup(group);
+        category.setRecurring(recurring);
+        category.setDueDayOfMonth(resolvedDueDayOfMonth);
         if (parentCategoryId == null) {
             category.setParentCategory(null);
             return;
@@ -119,10 +160,56 @@ public class CategoryService {
         if (parentCategory.getId().equals(category.getId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Category cannot be its own parent");
         }
-        if (parentCategory.getGroup() != group || parentCategory.getType() != type) {
+        if (parentCategory.getGroup() != group || parentCategory.getType() != resolvedType) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Parent category must have the same group and type");
         }
         category.setParentCategory(parentCategory);
+    }
+
+    private void validateCategoryShape(TransactionType type, Long parentCategoryId, boolean recurring, Integer dueDayOfMonth) {
+        if (type == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Category type is required");
+        }
+        if (type == TransactionType.TRANSFER) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Category type must be INCOME or EXPENSE");
+        }
+        if (recurring) {
+            if (type != TransactionType.EXPENSE || parentCategoryId == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Only expense subcategories can be recurring");
+            }
+            if (dueDayOfMonth == null || dueDayOfMonth < 1 || dueDayOfMonth > 31) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Recurring categories require dueDayOfMonth between 1 and 31");
+            }
+        } else if (dueDayOfMonth != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "dueDayOfMonth is only allowed for recurring categories");
+        }
+    }
+
+    private void ensureUniqueCategory(User currentUser, Long categoryId, String normalizedName, Long parentCategoryId) {
+        Specification<Category> specification = (root, query, cb) -> {
+            var predicates = cb.conjunction();
+            predicates = cb.and(predicates, cb.equal(root.get("userId"), currentUser.getId()));
+            predicates = cb.and(predicates, cb.equal(cb.lower(root.get("name")), normalizedName.toLowerCase(Locale.ROOT)));
+            predicates = parentCategoryId == null
+                    ? cb.and(predicates, cb.isNull(root.get("parentCategory")))
+                    : cb.and(predicates, cb.equal(root.get("parentCategory").get("id"), parentCategoryId));
+            if (categoryId != null) {
+                predicates = cb.and(predicates, cb.notEqual(root.get("id"), categoryId));
+            }
+            return predicates;
+        };
+
+        if (categoryRepository.count(specification) > 0) {
+            throw new ApiException(HttpStatus.CONFLICT, "Category already exists");
+        }
+    }
+
+    private String normalizeName(String name) {
+        String normalized = name == null ? null : name.trim();
+        if (normalized == null || normalized.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Category name is required");
+        }
+        return normalized;
     }
 
     private Specification<Category> visibleCategories(User currentUser) {
@@ -141,11 +228,14 @@ public class CategoryService {
     public CategoryResponse toResponse(Category category) {
         return new CategoryResponse(
                 category.getId(),
+                category.getUserId(),
                 category.getName(),
                 category.getType(),
                 category.getParentCategory() == null ? null : category.getParentCategory().getId(),
                 category.getParentCategory() == null ? null : category.getParentCategory().getName(),
-                category.getGroup()
+                category.getGroup(),
+                category.isRecurring(),
+                category.getDueDayOfMonth()
         );
     }
 }

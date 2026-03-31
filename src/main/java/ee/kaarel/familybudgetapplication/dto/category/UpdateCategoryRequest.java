@@ -8,6 +8,8 @@ public record UpdateCategoryRequest(
         @Size(max = 120) String name,
         TransactionType type,
         Long parentCategoryId,
-        CategoryGroup group
+        CategoryGroup group,
+        Boolean isRecurring,
+        Integer dueDayOfMonth
 ) {
 }

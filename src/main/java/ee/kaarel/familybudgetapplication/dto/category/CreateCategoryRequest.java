@@ -10,6 +10,8 @@ public record CreateCategoryRequest(
         @NotBlank @Size(max = 120) String name,
         @NotNull TransactionType type,
         Long parentCategoryId,
-        @NotNull CategoryGroup group
+        @NotNull CategoryGroup group,
+        Boolean isRecurring,
+        Integer dueDayOfMonth
 ) {
 }

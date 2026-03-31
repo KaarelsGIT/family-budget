@@ -9,7 +9,7 @@ import java.time.LocalDate;
 
 public record CreateTransactionRequest(
         @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
-        @NotNull TransactionType type,
+        TransactionType type,
         Long fromAccountId,
         Long toAccountId,
         Long categoryId,

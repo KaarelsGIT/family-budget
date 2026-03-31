@@ -30,11 +30,10 @@ public class TransactionController {
             Pageable pageable,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId,
-            @RequestParam(required = false) Long subcategoryId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
-        return transactionService.getTransactions(pageable, userId, categoryId, subcategoryId, from, to);
+        return transactionService.getTransactions(pageable, userId, categoryId, from, to);
     }
 
     @PostMapping
