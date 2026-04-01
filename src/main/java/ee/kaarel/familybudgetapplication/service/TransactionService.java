@@ -4,6 +4,7 @@ import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionResponse;
+import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.Category;
@@ -75,19 +76,72 @@ public class TransactionService {
     @Transactional
     public TransactionResponse create(CreateTransactionRequest request) {
         User currentUser = currentUserService.getCurrentUser();
-
-        if (request.categoryId() != null) {
-            Category category = categoryService.getCategory(request.categoryId());
-            categoryService.ensureVisible(currentUser, category);
-
-            return switch (category.getType()) {
-                case INCOME -> createIncome(currentUser, request, category);
-                case EXPENSE -> createExpense(currentUser, request, category);
-                case TRANSFER -> throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer categories are not supported for categorized transactions");
-            };
+        if (request.type() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction type is required");
         }
 
-        return createTransfer(currentUser, request);
+        return switch (request.type()) {
+            case INCOME -> {
+                if (request.categoryId() == null) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "Income requires a category");
+                }
+                Category category = categoryService.getCategory(request.categoryId());
+                categoryService.ensureVisible(currentUser, category);
+                yield createIncome(currentUser, request, category);
+            }
+            case EXPENSE -> {
+                if (request.categoryId() == null) {
+                    throw new ApiException(HttpStatus.BAD_REQUEST, "Expense requires a category");
+                }
+                Category category = categoryService.getCategory(request.categoryId());
+                categoryService.ensureVisible(currentUser, category);
+                yield createExpense(currentUser, request, category);
+            }
+            case TRANSFER -> createTransfer(currentUser, request);
+        };
+    }
+
+    @Transactional
+    public TransactionResponse update(Long id, UpdateTransactionRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+        Transaction transaction = getTransaction(id);
+        ensureEditableByCreator(currentUser, transaction);
+
+        if (transaction.getType() == TransactionType.TRANSFER) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers cannot be edited");
+        }
+
+        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction amount must be greater than zero");
+        }
+
+        if (request.transactionDate() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction date is required");
+        }
+
+        if (transaction.getType() == TransactionType.EXPENSE) {
+            Account account = transaction.getFromAccount();
+            ensureExpenseUpdateWillNotGoNegative(transaction, account, request.amount());
+        }
+
+        transaction.setAmount(request.amount());
+        transaction.setTransactionDate(request.transactionDate());
+        transaction.setComment(request.comment());
+
+        return toResponse(transactionRepository.save(transaction));
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        User currentUser = currentUserService.getCurrentUser();
+        Transaction transaction = getTransaction(id);
+        ensureEditableByCreator(currentUser, transaction);
+
+        if (transaction.getType() == TransactionType.TRANSFER) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers cannot be deleted");
+        }
+
+        transactionRepository.delete(transaction);
     }
 
     private TransactionResponse createIncome(User currentUser, CreateTransactionRequest request, Category category) {
@@ -215,6 +269,26 @@ public class TransactionService {
         }
     }
 
+    private void ensureExpenseUpdateWillNotGoNegative(Transaction transaction, Account account, BigDecimal newAmount) {
+        BigDecimal currentBalance = accountService.getCalculatedBalance(account);
+        BigDecimal availableAfterRestoringCurrentAmount = currentBalance.add(transaction.getAmount());
+        if (newAmount.compareTo(availableAfterRestoringCurrentAmount) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Kontol ei ole piisavalt raha");
+        }
+    }
+
+    private void ensureEditableByCreator(User currentUser, Transaction transaction) {
+        if (!transaction.getCreatedBy().getId().equals(currentUser.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You can only modify your own transactions");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public Transaction getTransaction(Long id) {
+        return transactionRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Transaction not found"));
+    }
+
     private Specification<Transaction> visibleTransactions(
             User currentUser,
             Long userId,
@@ -231,27 +305,32 @@ public class TransactionService {
                 query.distinct(true);
             }
 
+            var fromAccountJoin = root.join("fromAccount", JoinType.LEFT);
+            var toAccountJoin = root.join("toAccount", JoinType.LEFT);
+            var categoryJoin = root.join("category", JoinType.LEFT);
+            var createdByJoin = root.join("createdBy", JoinType.LEFT);
+
             var predicates = cb.conjunction();
 
             if (currentUser.getRole() == Role.CHILD) {
                 predicates = cb.and(predicates, cb.or(
-                        cb.equal(root.get("createdBy").get("id"), currentUser.getId()),
-                        cb.equal(root.get("fromAccount").get("owner").get("id"), currentUser.getId()),
-                        cb.equal(root.get("toAccount").get("owner").get("id"), currentUser.getId())
+                        cb.equal(createdByJoin.get("id"), currentUser.getId()),
+                        cb.equal(fromAccountJoin.get("owner").get("id"), currentUser.getId()),
+                        cb.equal(toAccountJoin.get("owner").get("id"), currentUser.getId())
                 ));
             }
 
             if (userId != null) {
                 predicates = cb.and(predicates, cb.or(
-                        cb.equal(root.get("fromAccount").get("owner").get("id"), userId),
-                        cb.equal(root.get("toAccount").get("owner").get("id"), userId),
-                        cb.equal(root.get("createdBy").get("id"), userId)
+                        cb.equal(fromAccountJoin.get("owner").get("id"), userId),
+                        cb.equal(toAccountJoin.get("owner").get("id"), userId),
+                        cb.equal(createdByJoin.get("id"), userId)
                 ));
             }
             if (categoryId != null) {
                 predicates = cb.and(predicates, cb.or(
-                        cb.equal(root.get("category").get("id"), categoryId),
-                        cb.equal(root.get("category").get("parentCategory").get("id"), categoryId)
+                        cb.equal(categoryJoin.get("id"), categoryId),
+                        cb.equal(categoryJoin.get("parentCategory").get("id"), categoryId)
                 ));
             }
             if (from != null) {

@@ -204,13 +204,8 @@ public class UserService {
             return true;
         }
         if (currentUser.getRole() == Role.PARENT) {
-            return targetUser.getId().equals(currentUser.getId())
-                    || targetUser.getRole() == Role.ADMIN
-                    || targetUser.getRole() == Role.CHILD;
+            return true;
         }
-        return targetUser.getId().equals(currentUser.getId())
-                || targetUser.getRole() == Role.ADMIN
-                || targetUser.getRole() == Role.PARENT
-                || targetUser.getRole() == Role.CHILD;
+        return targetUser.getId().equals(currentUser.getId());
     }
 }
