@@ -205,9 +205,7 @@ public class AccountService {
     }
 
     public AccountResponse toResponse(Account account) {
-        BigDecimal balance = transactionRepository.calculateBalance(account)
-                .add(accountBalanceAdjustmentRepository.calculateAdjustmentBalance(account))
-                .add(normalizeMoney(account.getInitialBalance()));
+        BigDecimal balance = getCalculatedBalance(account);
         return new AccountResponse(
                 account.getId(),
                 account.getName(),
@@ -219,6 +217,12 @@ public class AccountService {
                 account.isDeletionRequested(),
                 balance
         );
+    }
+
+    public BigDecimal getCalculatedBalance(Account account) {
+        return transactionRepository.calculateBalance(account)
+                .add(accountBalanceAdjustmentRepository.calculateAdjustmentBalance(account))
+                .add(normalizeMoney(account.getInitialBalance()));
     }
 
     private BigDecimal normalizeMoney(BigDecimal value) {

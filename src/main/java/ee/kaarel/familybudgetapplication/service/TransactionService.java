@@ -17,6 +17,7 @@ import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.math.BigDecimal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -123,6 +124,7 @@ public class TransactionService {
         Account fromAccount = accountService.getAccount(request.fromAccountId());
         validateAccountModification(currentUser, fromAccount);
         validateCategoryType(category, TransactionType.EXPENSE);
+        ensureBalanceWillNotGoNegative(fromAccount, request.amount());
 
         Transaction transaction = new Transaction();
         transaction.setAmount(request.amount());
@@ -153,6 +155,7 @@ public class TransactionService {
         Account fromAccount = accountService.getAccount(request.fromAccountId());
         Account toAccount = accountService.getAccount(request.toAccountId());
         validateTransfer(currentUser, fromAccount, toAccount);
+        ensureBalanceWillNotGoNegative(fromAccount, request.amount());
 
         Transaction transaction = new Transaction();
         transaction.setAmount(request.amount());
@@ -203,6 +206,12 @@ public class TransactionService {
         userService.ensureSelectableUser(currentUser, toAccount.getOwner());
         if (toAccount.getType() != AccountType.MAIN || !toAccount.isDefault()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers to other users must go to their default MAIN account");
+        }
+    }
+
+    private void ensureBalanceWillNotGoNegative(Account account, BigDecimal amount) {
+        if (accountService.getCalculatedBalance(account).compareTo(amount) < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Saldo ei tohi minna alla nulli!");
         }
     }
 
