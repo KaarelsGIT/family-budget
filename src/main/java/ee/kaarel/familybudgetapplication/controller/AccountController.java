@@ -1,6 +1,7 @@
 package ee.kaarel.familybudgetapplication.controller;
 
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
+import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
@@ -14,6 +15,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,6 +52,12 @@ public class AccountController {
     public ApiResponse<?> updateAccount(@PathVariable Long id, @Valid @RequestBody UpdateAccountRequest request) {
         logCurrentUser("PUT /api/accounts/" + id);
         return new ApiResponse<>(accountService.updateAccount(id, request));
+    }
+
+    @PatchMapping("/{id}/adjust-balance")
+    public ApiResponse<?> adjustBalance(@PathVariable Long id, @Valid @RequestBody AdjustBalanceRequest request) {
+        logCurrentUser("PATCH /api/accounts/" + id + "/adjust-balance");
+        return new ApiResponse<>(accountService.adjustBalance(id, request));
     }
 
     @DeleteMapping("/{id}")

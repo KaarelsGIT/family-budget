@@ -2,15 +2,18 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.account.AccountResponse;
+import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
+import ee.kaarel.familybudgetapplication.model.AccountBalanceAdjustment;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
+import ee.kaarel.familybudgetapplication.repository.AccountBalanceAdjustmentRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.math.BigDecimal;
@@ -28,17 +31,20 @@ import org.springframework.transaction.annotation.Transactional;
 public class AccountService {
 
     private final AccountRepository accountRepository;
+    private final AccountBalanceAdjustmentRepository accountBalanceAdjustmentRepository;
     private final TransactionRepository transactionRepository;
     private final CurrentUserService currentUserService;
     private final NotificationService notificationService;
 
     public AccountService(
             AccountRepository accountRepository,
+            AccountBalanceAdjustmentRepository accountBalanceAdjustmentRepository,
             TransactionRepository transactionRepository,
             CurrentUserService currentUserService,
             NotificationService notificationService
     ) {
         this.accountRepository = accountRepository;
+        this.accountBalanceAdjustmentRepository = accountBalanceAdjustmentRepository;
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
         this.notificationService = notificationService;
@@ -78,6 +84,31 @@ public class AccountService {
 
         account.setName(request.name());
         return toResponse(accountRepository.save(account));
+    }
+
+    @Transactional
+    public AccountResponse adjustBalance(Long id, AdjustBalanceRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+        Account account = getAccount(id);
+        ensureCanAccessAccount(currentUser, account);
+
+        if (!canRenameAccount(currentUser, account)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot adjust this account balance");
+        }
+
+        BigDecimal amount = request.amount();
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) == 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Adjustment amount must not be zero");
+        }
+
+        AccountBalanceAdjustment adjustment = new AccountBalanceAdjustment();
+        adjustment.setAccount(account);
+        adjustment.setAmount(amount);
+        adjustment.setComment(request.comment().trim());
+        account.getManualAdjustments().add(adjustment);
+
+        accountRepository.save(account);
+        return toResponse(account);
     }
 
     @Transactional
@@ -174,7 +205,9 @@ public class AccountService {
     }
 
     public AccountResponse toResponse(Account account) {
-        BigDecimal balance = transactionRepository.calculateBalance(account);
+        BigDecimal balance = transactionRepository.calculateBalance(account)
+                .add(accountBalanceAdjustmentRepository.calculateAdjustmentBalance(account))
+                .add(normalizeMoney(account.getInitialBalance()));
         return new AccountResponse(
                 account.getId(),
                 account.getName(),
@@ -186,5 +219,9 @@ public class AccountService {
                 account.isDeletionRequested(),
                 balance
         );
+    }
+
+    private BigDecimal normalizeMoney(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
     }
 }
