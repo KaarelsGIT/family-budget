@@ -211,7 +211,7 @@ public class TransactionService {
 
     private void ensureBalanceWillNotGoNegative(Account account, BigDecimal amount) {
         if (accountService.getCalculatedBalance(account).compareTo(amount) < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Saldo ei tohi minna alla nulli!");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Kontol ei ole piisavalt raha");
         }
     }
 
