@@ -19,6 +19,8 @@ import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -169,17 +171,20 @@ public class RecurringPaymentService {
             return;
         }
 
-        Set<Long> categoryIds = visible.stream().map(payment -> payment.getCategory().getId()).collect(Collectors.toSet());
-        Set<Long> paidCategoryIds = transactionRepository.findPaidCategoryIdsForMonth(categoryIds, now.getYear(), now.getMonthValue())
-                .stream()
-                .collect(Collectors.toSet());
-
         visible.stream()
                 .filter(RecurringPayment::isActive)
                 .forEach(payment -> {
                     RecurringPaymentStatus status = ensureStatus(payment, now.getYear(), now.getMonthValue());
-                    // Recalculate from the current transaction set so deleted payments do not stay "paid".
-                    boolean paid = paidCategoryIds.contains(payment.getCategory().getId());
+                    // Only count transactions created after the recurring payment itself existed.
+                    OffsetDateTime createdAfter = payment.getCreatedAt() == null
+                            ? OffsetDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC)
+                            : payment.getCreatedAt();
+                    boolean paid = transactionRepository.existsPaidCategoryAfterCreationInMonth(
+                            payment.getCategory().getId(),
+                            now.getYear(),
+                            now.getMonthValue(),
+                            createdAfter
+                    );
                     if (status.isPaid() != paid) {
                         status.setPaid(paid);
                         recurringPaymentStatusRepository.save(status);

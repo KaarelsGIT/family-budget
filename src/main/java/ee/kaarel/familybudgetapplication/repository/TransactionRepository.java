@@ -3,8 +3,10 @@ package ee.kaarel.familybudgetapplication.repository;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.Transaction;
+import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsRow;
 import ee.kaarel.familybudgetapplication.model.User;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -16,6 +18,52 @@ import org.springframework.data.repository.query.Param;
 public interface TransactionRepository extends JpaRepository<Transaction, Long>, JpaSpecificationExecutor<Transaction> {
 
     boolean existsByCategory(Category category);
+
+    @Query("""
+            select new ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsRow(
+                month(t.transactionDate),
+                t.type,
+                fromAccount.id,
+                fromAccount.name,
+                fromAccount.type,
+                toAccount.id,
+                toAccount.name,
+                toAccount.type,
+                parentCategory.id,
+                parentCategory.name,
+                category.id,
+                category.name,
+                sum(t.amount),
+                count(t)
+            )
+            from Transaction t
+            left join t.fromAccount fromAccount
+            left join t.toAccount toAccount
+            left join t.category category
+            left join category.parentCategory parentCategory
+            where year(t.transactionDate) = :year
+            and (:accountId is null or fromAccount.id = :accountId or toAccount.id = :accountId)
+            and (:restrictToCurrentUser = false or t.createdBy.id = :currentUserId or fromAccount.owner.id = :currentUserId or toAccount.owner.id = :currentUserId)
+            group by
+                month(t.transactionDate),
+                t.type,
+                fromAccount.id,
+                fromAccount.name,
+                fromAccount.type,
+                toAccount.id,
+                toAccount.name,
+                toAccount.type,
+                parentCategory.id,
+                parentCategory.name,
+                category.id,
+                category.name
+            """)
+    List<YearlyStatisticsRow> findYearlyStatisticsRows(
+            @Param("year") int year,
+            @Param("accountId") Long accountId,
+            @Param("currentUserId") Long currentUserId,
+            @Param("restrictToCurrentUser") boolean restrictToCurrentUser
+    );
 
     @Query("""
             select coalesce(sum(
@@ -76,5 +124,21 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             @Param("categoryIds") Collection<Long> categoryIds,
             @Param("year") int year,
             @Param("month") int month
+    );
+
+    @Query("""
+            select count(t) > 0
+            from Transaction t
+            where t.category.id = :categoryId
+            and t.transactionDate is not null
+            and year(t.transactionDate) = :year
+            and month(t.transactionDate) = :month
+            and t.createdAt >= :createdAfter
+            """)
+    boolean existsPaidCategoryAfterCreationInMonth(
+            @Param("categoryId") Long categoryId,
+            @Param("year") int year,
+            @Param("month") int month,
+            @Param("createdAfter") OffsetDateTime createdAfter
     );
 }
