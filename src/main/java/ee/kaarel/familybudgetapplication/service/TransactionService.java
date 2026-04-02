@@ -61,13 +61,17 @@ public class TransactionService {
             Pageable pageable,
             Long userId,
             Long categoryId,
+            Long mainCategoryId,
+            Long subCategoryId,
+            TransactionType type,
             LocalDate from,
             LocalDate to
     ) {
         User currentUser = currentUserService.getCurrentUser();
+        Long effectiveUserId = userId != null ? userId : currentUser.getId();
         Pageable sorted = PageableUtils.withDefaultSort(pageable, Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
         Page<Transaction> page = transactionRepository.findAll(
-                visibleTransactions(currentUser, userId, categoryId, from, to),
+                visibleTransactions(currentUser, effectiveUserId, categoryId, mainCategoryId, subCategoryId, type, from, to),
                 sorted
         );
         return new ListResponse<>(page.map(this::toResponse).getContent(), page.getTotalElements());
@@ -302,6 +306,9 @@ public class TransactionService {
             User currentUser,
             Long userId,
             Long categoryId,
+            Long mainCategoryId,
+            Long subCategoryId,
+            TransactionType type,
             LocalDate from,
             LocalDate to
     ) {
@@ -321,6 +328,10 @@ public class TransactionService {
 
             var predicates = cb.conjunction();
 
+            if (type != null) {
+                predicates = cb.and(predicates, cb.equal(root.get("type"), type));
+            }
+
             if (currentUser.getRole() == Role.CHILD) {
                 predicates = cb.and(predicates, cb.or(
                         cb.equal(createdByJoin.get("id"), currentUser.getId()),
@@ -336,11 +347,21 @@ public class TransactionService {
                         cb.equal(createdByJoin.get("id"), userId)
                 ));
             }
+
             if (categoryId != null) {
                 predicates = cb.and(predicates, cb.or(
                         cb.equal(categoryJoin.get("id"), categoryId),
                         cb.equal(categoryJoin.get("parentCategory").get("id"), categoryId)
                 ));
+            }
+            if (mainCategoryId != null) {
+                predicates = cb.and(predicates, cb.or(
+                        cb.equal(categoryJoin.get("id"), mainCategoryId),
+                        cb.equal(categoryJoin.get("parentCategory").get("id"), mainCategoryId)
+                ));
+            }
+            if (subCategoryId != null) {
+                predicates = cb.and(predicates, cb.equal(categoryJoin.get("id"), subCategoryId));
             }
             if (from != null) {
                 OffsetDateTime fromDateTime = from.atStartOfDay().atOffset(ZoneOffset.UTC);

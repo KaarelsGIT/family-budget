@@ -4,6 +4,7 @@ import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
+import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.service.TransactionService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
@@ -34,10 +35,13 @@ public class TransactionController {
             Pageable pageable,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long mainCategoryId,
+            @RequestParam(required = false) Long subCategoryId,
+            @RequestParam(required = false) TransactionType type,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
-        return transactionService.getTransactions(pageable, userId, categoryId, from, to);
+        return transactionService.getTransactions(pageable, userId, categoryId, mainCategoryId, subCategoryId, type, from, to);
     }
 
     @PostMapping
