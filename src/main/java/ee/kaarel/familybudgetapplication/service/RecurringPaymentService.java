@@ -20,6 +20,7 @@ import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
@@ -78,7 +79,12 @@ public class RecurringPaymentService {
         Category category = categoryService.getCategory(request.categoryId());
         categoryService.ensureVisible(currentUser, category);
 
-        RecurringPayment recurringPayment = new RecurringPayment();
+        validateRecurringCategory(category, request.active() == null || request.active(), request.dueDay());
+
+        RecurringPayment recurringPayment = recurringPaymentRepository.findByOwnerAndCategory(currentUser, category)
+                .orElseGet(RecurringPayment::new);
+        Category previousCategory = recurringPayment.getCategory();
+
         recurringPayment.setName(request.name());
         recurringPayment.setAmount(request.amount());
         recurringPayment.setDueDay(request.dueDay());
@@ -86,6 +92,7 @@ public class RecurringPaymentService {
         recurringPayment.setOwner(currentUser);
         recurringPayment.setActive(request.active() == null || request.active());
         RecurringPayment saved = recurringPaymentRepository.save(recurringPayment);
+        syncCategoryState(saved, previousCategory);
         ensureStatus(saved, LocalDate.now().getYear(), LocalDate.now().getMonthValue());
         return toResponse(saved);
     }
@@ -95,6 +102,7 @@ public class RecurringPaymentService {
         User currentUser = currentUserService.getCurrentUser();
         RecurringPayment recurringPayment = getRecurringPayment(id);
         ensureAccess(currentUser, recurringPayment);
+        Category previousCategory = recurringPayment.getCategory();
 
         if (request.name() != null) {
             recurringPayment.setName(request.name());
@@ -111,9 +119,18 @@ public class RecurringPaymentService {
         if (request.categoryId() != null) {
             Category category = categoryService.getCategory(request.categoryId());
             categoryService.ensureVisible(currentUser, category);
+            if (!category.getId().equals(recurringPayment.getCategory().getId())) {
+                recurringPaymentRepository.findByOwnerAndCategory(currentUser, category)
+                        .filter(existing -> !existing.getId().equals(recurringPayment.getId()))
+                        .ifPresent(existing -> {
+                            throw new ApiException(HttpStatus.CONFLICT, "Recurring payment already exists for this category");
+                        });
+            }
             recurringPayment.setCategory(category);
         }
+        validateRecurringCategory(recurringPayment.getCategory(), recurringPayment.isActive(), recurringPayment.getDueDay());
         RecurringPayment saved = recurringPaymentRepository.save(recurringPayment);
+        syncCategoryState(saved, previousCategory);
         ensureStatus(saved, LocalDate.now().getYear(), LocalDate.now().getMonthValue());
         return toResponse(saved);
     }
@@ -123,7 +140,9 @@ public class RecurringPaymentService {
         User currentUser = currentUserService.getCurrentUser();
         RecurringPayment recurringPayment = getRecurringPayment(id);
         ensureAccess(currentUser, recurringPayment);
+        Category category = recurringPayment.getCategory();
         recurringPaymentRepository.delete(recurringPayment);
+        deactivateCategory(category);
     }
 
     @Transactional
@@ -159,8 +178,10 @@ public class RecurringPaymentService {
                 .filter(RecurringPayment::isActive)
                 .forEach(payment -> {
                     RecurringPaymentStatus status = ensureStatus(payment, now.getYear(), now.getMonthValue());
-                    if (paidCategoryIds.contains(payment.getCategory().getId())) {
-                        status.setPaid(true);
+                    // Recalculate from the current transaction set so deleted payments do not stay "paid".
+                    boolean paid = paidCategoryIds.contains(payment.getCategory().getId());
+                    if (status.isPaid() != paid) {
+                        status.setPaid(paid);
                         recurringPaymentStatusRepository.save(status);
                     }
                     if (!status.isPaid() && now.getDayOfMonth() > payment.getDueDay()) {
@@ -253,6 +274,44 @@ public class RecurringPaymentService {
                     status.setPaid(false);
                     return recurringPaymentStatusRepository.save(status);
                 });
+    }
+
+    private void syncCategoryState(RecurringPayment recurringPayment, Category previousCategory) {
+        if (previousCategory != null && !previousCategory.getId().equals(recurringPayment.getCategory().getId())) {
+            deactivateCategory(previousCategory);
+        }
+
+        if (!recurringPayment.isActive()) {
+            deactivateCategory(recurringPayment.getCategory());
+            return;
+        }
+
+        Category category = recurringPayment.getCategory();
+        category.setRecurring(true);
+        category.setDueDayOfMonth(recurringPayment.getDueDay());
+        categoryRepository.save(category);
+    }
+
+    private void deactivateCategory(Category category) {
+        if (category == null) {
+            return;
+        }
+
+        category.setRecurring(false);
+        category.setDueDayOfMonth(null);
+        categoryRepository.save(category);
+    }
+
+    private void validateRecurringCategory(Category category, boolean active, Integer dueDay) {
+        if (category == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Category is required");
+        }
+        if (active && (dueDay == null || dueDay < 1 || dueDay > 31)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Due day must be between 1 and 31");
+        }
+        if (category.getType() != ee.kaarel.familybudgetapplication.model.TransactionType.EXPENSE) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Recurring payments must use expense categories");
+        }
     }
 
     public RecurringPaymentResponse toResponse(RecurringPayment recurringPayment) {

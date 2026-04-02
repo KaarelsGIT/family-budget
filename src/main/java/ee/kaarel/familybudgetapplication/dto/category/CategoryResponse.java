@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.dto.category;
 
 import ee.kaarel.familybudgetapplication.model.CategoryGroup;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
+import java.math.BigDecimal;
 
 public record CategoryResponse(
         Long id,
@@ -12,6 +13,7 @@ public record CategoryResponse(
         String parentCategoryName,
         CategoryGroup group,
         boolean isRecurring,
-        Integer dueDayOfMonth
+        Integer dueDayOfMonth,
+        BigDecimal recurringAmount
 ) {
 }

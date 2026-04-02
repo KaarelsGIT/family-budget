@@ -9,6 +9,7 @@ public record NotificationResponse(
         String message,
         String action,
         Long relatedCategoryId,
+        Long relatedReminderId,
         boolean isRead,
         OffsetDateTime createdAt
 ) {

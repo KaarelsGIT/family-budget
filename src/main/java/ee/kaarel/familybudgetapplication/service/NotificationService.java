@@ -6,6 +6,8 @@ import ee.kaarel.familybudgetapplication.dto.notification.NotificationResponse;
 import ee.kaarel.familybudgetapplication.model.Notification;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
 import ee.kaarel.familybudgetapplication.model.Role;
+import ee.kaarel.familybudgetapplication.model.RecurringTransaction;
+import ee.kaarel.familybudgetapplication.model.TransactionReminder;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
@@ -50,12 +52,18 @@ public class NotificationService {
 
     @Transactional
     public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId) {
+        createNotification(user, type, message, action, relatedCategoryId, null);
+    }
+
+    @Transactional
+    public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId) {
         Notification notification = new Notification();
         notification.setUser(user);
         notification.setType(type);
         notification.setMessage(message);
         notification.setAction(action);
         notification.setRelatedCategoryId(relatedCategoryId);
+        notification.setRelatedReminderId(relatedReminderId);
         notification.setRead(false);
         notification.setCreatedAt(OffsetDateTime.now());
         notificationRepository.save(notification);
@@ -79,6 +87,20 @@ public class NotificationService {
     public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId) {
         if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
             createNotification(user, type, message, action, relatedCategoryId);
+        }
+    }
+
+    @Transactional
+    public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId) {
+        if (relatedReminderId != null) {
+            if (!notificationRepository.existsByUserAndTypeAndRelatedReminderId(user, type, relatedReminderId)) {
+                createNotification(user, type, message, action, relatedCategoryId, relatedReminderId);
+            }
+            return;
+        }
+
+        if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
+            createNotification(user, type, message, action, relatedCategoryId, null);
         }
     }
 
@@ -140,8 +162,27 @@ public class NotificationService {
                 notification.getMessage(),
                 notification.getAction(),
                 notification.getRelatedCategoryId(),
+                notification.getRelatedReminderId(),
                 notification.isRead(),
                 notification.getCreatedAt()
+        );
+    }
+
+    @Transactional
+    public void notifyRecurringPaymentDue(User recipient, RecurringTransaction recurringTransaction, TransactionReminder reminder) {
+        String message = localizeRecurringPaymentDueMessage(
+                recipient,
+                recurringTransaction.getCategory().getName(),
+                recurringTransaction.getAmount(),
+                reminder.getDueDate()
+        );
+        createNotificationIfAbsent(
+                recipient,
+                NotificationType.RECURRING_PAYMENT_DUE,
+                message,
+                "PAY",
+                null,
+                reminder.getId()
         );
     }
 
@@ -153,6 +194,21 @@ public class NotificationService {
             case "fi" -> "Sait " + formattedAmount + " kayttajalta " + senderUsername + " tilille " + toAccountName;
             default -> "Said " + formattedAmount + " kasutajalt " + senderUsername + " kontole " + toAccountName;
         };
+    }
+
+    private String localizeRecurringPaymentDueMessage(User recipient, String categoryName, BigDecimal amount, java.time.LocalDate dueDate) {
+        String preferredLanguage = resolvePreferredLanguage(recipient);
+        String formattedAmount = amount == null ? null : formatCurrency(preferredLanguage, amount);
+        String dueDateText = dueDate.toString();
+        return switch (preferredLanguage) {
+            case "en" -> "Recurring payment due: " + categoryName + amountSuffix(formattedAmount) + " due on " + dueDateText;
+            case "fi" -> "Toistuva maksu erääntyy: " + categoryName + amountSuffix(formattedAmount) + " eräpäivä " + dueDateText;
+            default -> "Korduv makse tähtaegub: " + categoryName + amountSuffix(formattedAmount) + " tähtaeg " + dueDateText;
+        };
+    }
+
+    private String amountSuffix(String formattedAmount) {
+        return formattedAmount == null ? "" : " (" + formattedAmount + ")";
     }
 
     private String formatCurrency(String language, BigDecimal amount) {

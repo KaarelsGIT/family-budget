@@ -11,43 +11,36 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-import java.time.OffsetDateTime;
+import jakarta.persistence.UniqueConstraint;
+import java.time.LocalDate;
 import lombok.Getter;
 import lombok.Setter;
 
 @Getter
 @Setter
 @Entity
-@Table(name = "notifications")
-public class Notification {
+@Table(
+        name = "transaction_reminders",
+        uniqueConstraints = @UniqueConstraint(columnNames = {"recurring_transaction_id", "due_date"})
+)
+public class TransactionReminder {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "recurring_transaction_id", nullable = false)
+    private RecurringTransaction recurringTransaction;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
+    @Column(name = "due_date", nullable = false)
+    private LocalDate dueDate;
+
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 50)
-    private NotificationType type;
-
-    @Column(nullable = false, length = 500)
-    private String message;
-
-    @Column(length = 20)
-    private String action;
-
-    @Column(name = "related_category_id")
-    private Long relatedCategoryId;
-
-    @Column(name = "related_reminder_id")
-    private Long relatedReminderId;
-
-    @Column(nullable = false)
-    private boolean isRead;
-
-    @Column(nullable = false)
-    private OffsetDateTime createdAt;
+    @Column(nullable = false, length = 20)
+    private ReminderStatus status;
 }

@@ -18,5 +18,7 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     boolean existsByUserAndTypeAndMessage(User user, NotificationType type, String message);
 
+    boolean existsByUserAndTypeAndRelatedReminderId(User user, NotificationType type, Long relatedReminderId);
+
     void deleteAllByUser(User user);
 }

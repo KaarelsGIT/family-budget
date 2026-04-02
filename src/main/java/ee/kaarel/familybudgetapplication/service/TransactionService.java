@@ -76,6 +76,15 @@ public class TransactionService {
     @Transactional
     public TransactionResponse create(CreateTransactionRequest request) {
         User currentUser = currentUserService.getCurrentUser();
+        return createInternal(currentUser, request);
+    }
+
+    @Transactional
+    public TransactionResponse createForUser(User currentUser, CreateTransactionRequest request) {
+        return createInternal(currentUser, request);
+    }
+
+    private TransactionResponse createInternal(User currentUser, CreateTransactionRequest request) {
         if (request.type() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction type is required");
         }
