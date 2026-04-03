@@ -1,10 +1,13 @@
 package ee.kaarel.familybudgetapplication.appConfig;
 
 import ee.kaarel.familybudgetapplication.model.Account;
+import ee.kaarel.familybudgetapplication.model.AccountUser;
 import ee.kaarel.familybudgetapplication.model.AccountType;
+import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
+import ee.kaarel.familybudgetapplication.repository.AccountUserRepository;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
@@ -16,7 +19,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 public class DataInitializer {
 
     @Bean
-    CommandLineRunner createDefaultAdmin(UserRepository userRepository, AccountRepository accountRepository, PasswordEncoder passwordEncoder) {
+    CommandLineRunner createDefaultAdmin(
+            UserRepository userRepository,
+            AccountRepository accountRepository,
+            AccountUserRepository accountUserRepository,
+            PasswordEncoder passwordEncoder
+    ) {
         return args -> {
             if (userRepository.existsByRole(Role.ADMIN)) {
                 return;
@@ -35,7 +43,13 @@ public class DataInitializer {
             account.setType(AccountType.MAIN);
             account.setDefault(true);
             account.setDeletionRequested(false);
-            accountRepository.save(account);
+            Account savedAccount = accountRepository.save(account);
+
+            AccountUser ownerLink = new AccountUser();
+            ownerLink.setAccount(savedAccount);
+            ownerLink.setUser(savedAdmin);
+            ownerLink.setRole(AccountUserRole.OWNER);
+            accountUserRepository.save(ownerLink);
         };
     }
 }

@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.controller;
 
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
+import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
@@ -39,7 +40,9 @@ public class AccountController {
     @GetMapping
     public ListResponse<?> getAccounts(Pageable pageable) {
         logCurrentUser("GET /api/accounts");
-        return accountService.getAccounts(pageable);
+        ListResponse<?> response = accountService.getAccounts(pageable);
+        log.info("GET /api/accounts returned {} accounts", response.total());
+        return response;
     }
 
     @PostMapping
@@ -58,6 +61,18 @@ public class AccountController {
     public ApiResponse<?> adjustBalance(@PathVariable Long id, @Valid @RequestBody AdjustBalanceRequest request) {
         logCurrentUser("PATCH /api/accounts/" + id + "/adjust-balance");
         return new ApiResponse<>(accountService.adjustBalance(id, request));
+    }
+
+    @PostMapping("/{id}/share")
+    public ApiResponse<?> shareAccount(@PathVariable Long id, @Valid @RequestBody ShareAccountRequest request) {
+        logCurrentUser("POST /api/accounts/" + id + "/share");
+        return new ApiResponse<>(accountService.shareAccount(id, request));
+    }
+
+    @DeleteMapping("/{id}/share/{userId}")
+    public ApiResponse<?> revokeShare(@PathVariable Long id, @PathVariable Long userId) {
+        logCurrentUser("DELETE /api/accounts/" + id + "/share/" + userId);
+        return new ApiResponse<>(accountService.revokeShare(id, userId));
     }
 
     @DeleteMapping("/{id}")

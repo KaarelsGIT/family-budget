@@ -2,7 +2,9 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
+import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.dto.notification.NotificationResponse;
+import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.Notification;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
 import ee.kaarel.familybudgetapplication.model.Role;
@@ -121,6 +123,24 @@ public class NotificationService {
         );
     }
 
+    @Transactional
+    public void notifyAccountShared(User recipient, User sender, Account account, AccountUserRole role) {
+        createNotificationIfAbsent(
+                recipient,
+                NotificationType.ACCOUNT_SHARED,
+                localizeAccountSharedMessage(recipient, sender.getUsername(), account.getName(), role)
+        );
+    }
+
+    @Transactional
+    public void notifyAccountUnshared(User recipient, User sender, Account account) {
+        createNotificationIfAbsent(
+                recipient,
+                NotificationType.ACCOUNT_UNSHARED,
+                localizeAccountUnsharedMessage(recipient, sender.getUsername(), account.getName())
+        );
+    }
+
     @Transactional(readOnly = true)
     public ListResponse<NotificationResponse> getNotifications(Pageable pageable) {
         User currentUser = currentUserService.getCurrentUser();
@@ -204,6 +224,45 @@ public class NotificationService {
             case "en" -> "Recurring payment due: " + categoryName + amountSuffix(formattedAmount) + " due on " + dueDateText;
             case "fi" -> "Toistuva maksu erääntyy: " + categoryName + amountSuffix(formattedAmount) + " eräpäivä " + dueDateText;
             default -> "Korduv makse tähtaegub: " + categoryName + amountSuffix(formattedAmount) + " tähtaeg " + dueDateText;
+        };
+    }
+
+    private String localizeAccountSharedMessage(User recipient, String senderUsername, String accountName, AccountUserRole role) {
+        String preferredLanguage = resolvePreferredLanguage(recipient);
+        String roleText = localizeRole(role, preferredLanguage);
+        return switch (preferredLanguage) {
+            case "en" -> "Account " + accountName + " was shared by " + senderUsername + " with " + roleText + " access";
+            case "fi" -> "Tili " + accountName + " jaettiin käyttäjältä " + senderUsername + " oikeuksilla " + roleText;
+            default -> "Konto " + accountName + " jagati kasutajalt " + senderUsername + " õigusega " + roleText;
+        };
+    }
+
+    private String localizeAccountUnsharedMessage(User recipient, String senderUsername, String accountName) {
+        String preferredLanguage = resolvePreferredLanguage(recipient);
+        return switch (preferredLanguage) {
+            case "en" -> "Access to account " + accountName + " was removed by " + senderUsername;
+            case "fi" -> "Käyttöoikeus tilille " + accountName + " poistettiin käyttäjältä " + senderUsername;
+            default -> "Ligipääs kontole " + accountName + " eemaldati kasutajalt " + senderUsername;
+        };
+    }
+
+    private String localizeRole(AccountUserRole role, String language) {
+        return switch (role) {
+            case EDITOR -> switch (language) {
+                case "en" -> "editor";
+                case "fi" -> "muokkaaja";
+                default -> "muutja";
+            };
+            case VIEWER -> switch (language) {
+                case "en" -> "viewer";
+                case "fi" -> "katselija";
+                default -> "vaataja";
+            };
+            default -> switch (language) {
+                case "en" -> "owner";
+                case "fi" -> "omistaja";
+                default -> "omanik";
+            };
         };
     }
 

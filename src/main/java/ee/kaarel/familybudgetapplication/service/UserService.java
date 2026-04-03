@@ -5,6 +5,7 @@ import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UserResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
+import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
@@ -31,6 +32,7 @@ public class UserService {
     private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
+    private final AccountService accountService;
 
     public UserService(
             UserRepository userRepository,
@@ -39,7 +41,8 @@ public class UserService {
             RecurringPaymentRepository recurringPaymentRepository,
             NotificationRepository notificationRepository,
             PasswordEncoder passwordEncoder,
-            CurrentUserService currentUserService
+            CurrentUserService currentUserService,
+            AccountService accountService
     ) {
         this.userRepository = userRepository;
         this.accountRepository = accountRepository;
@@ -48,6 +51,7 @@ public class UserService {
         this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
+        this.accountService = accountService;
     }
 
     @Transactional
@@ -77,7 +81,8 @@ public class UserService {
         mainAccount.setType(AccountType.MAIN);
         mainAccount.setDefault(true);
         mainAccount.setDeletionRequested(false);
-        accountRepository.save(mainAccount);
+        Account savedMainAccount = accountRepository.save(mainAccount);
+        accountService.grantAccountAccess(savedMainAccount, savedUser, AccountUserRole.OWNER);
         return toResponse(savedUser);
     }
 

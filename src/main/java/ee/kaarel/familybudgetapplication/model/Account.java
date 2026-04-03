@@ -47,6 +47,9 @@ public class Account {
     @OneToMany(mappedBy = "account", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<AccountBalanceAdjustment> manualAdjustments = new ArrayList<>();
 
+    @OneToMany(mappedBy = "account", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<AccountUser> accountUsers = new ArrayList<>();
+
     @Column(nullable = false)
     private boolean isDefault;
 

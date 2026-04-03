@@ -254,23 +254,24 @@ public class TransactionService {
 
     private void validateAccountModification(User currentUser, Account account) {
         accountService.ensureCanAccessAccount(currentUser, account);
-        if (!accountService.canManageAccount(currentUser, account)) {
+        if (!accountService.canTransactFromAccount(currentUser, account)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot modify transactions for this account");
         }
     }
 
     private void validateTransfer(User currentUser, Account fromAccount, Account toAccount) {
         validateAccountModification(currentUser, fromAccount);
-        if (!fromAccount.getOwner().getId().equals(currentUser.getId())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "You can only transfer from your own accounts");
+        if (!accountService.canTransactFromAccount(currentUser, fromAccount)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You can only transfer from accounts you can edit");
         }
+
+        accountService.ensureCanAccessAccount(currentUser, toAccount);
 
         boolean sameOwner = fromAccount.getOwner().getId().equals(toAccount.getOwner().getId());
         if (sameOwner) {
             return;
         }
 
-        userService.ensureSelectableUser(currentUser, toAccount.getOwner());
         if (toAccount.getType() != AccountType.MAIN || !toAccount.isDefault()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers to other users must go to their default MAIN account");
         }
