@@ -9,6 +9,7 @@ import ee.kaarel.familybudgetapplication.model.Notification;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.RecurringTransaction;
+import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.TransactionReminder;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
@@ -120,6 +121,15 @@ public class NotificationService {
                 recipient,
                 NotificationType.MONEY_RECEIVED,
                 localizeMoneyReceivedMessage(recipient, sender.getUsername(), amount, toAccountName)
+        );
+    }
+
+    @Transactional
+    public void notifySharedAccountTransaction(User recipient, User actor, Account account, TransactionType transactionType, BigDecimal amount) {
+        createNotification(
+                recipient,
+                NotificationType.SHARED_ACCOUNT_TRANSACTION,
+                localizeSharedAccountTransactionMessage(recipient, actor.getUsername(), account.getName(), transactionType, amount)
         );
     }
 
@@ -243,6 +253,43 @@ public class NotificationService {
             case "en" -> "Access to account " + accountName + " was removed by " + senderUsername;
             case "fi" -> "Käyttöoikeus tilille " + accountName + " poistettiin käyttäjältä " + senderUsername;
             default -> "Ligipääs kontole " + accountName + " eemaldati kasutajalt " + senderUsername;
+        };
+    }
+
+    private String localizeSharedAccountTransactionMessage(
+            User recipient,
+            String actorUsername,
+            String accountName,
+            TransactionType transactionType,
+            BigDecimal amount
+    ) {
+        String preferredLanguage = resolvePreferredLanguage(recipient);
+        String formattedAmount = formatCurrency(preferredLanguage, amount);
+        String transactionText = localizeTransactionType(transactionType, preferredLanguage);
+        return switch (preferredLanguage) {
+            case "en" -> actorUsername + " added a " + transactionText + " of " + formattedAmount + " on shared account " + accountName;
+            case "fi" -> actorUsername + " lisäsi " + transactionText + " " + formattedAmount + " jaetulle tilille " + accountName;
+            default -> actorUsername + " tegi " + transactionText + " summas " + formattedAmount + " jagatud kontol " + accountName;
+        };
+    }
+
+    private String localizeTransactionType(TransactionType transactionType, String language) {
+        return switch (transactionType) {
+            case INCOME -> switch (language) {
+                case "en" -> "income";
+                case "fi" -> "tulon";
+                default -> "tulu";
+            };
+            case EXPENSE -> switch (language) {
+                case "en" -> "expense";
+                case "fi" -> "kulun";
+                default -> "kulu";
+            };
+            default -> switch (language) {
+                case "en" -> "transaction";
+                case "fi" -> "tapahtuman";
+                default -> "tehingu";
+            };
         };
     }
 

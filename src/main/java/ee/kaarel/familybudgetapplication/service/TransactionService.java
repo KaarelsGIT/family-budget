@@ -175,6 +175,7 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
+        notifySharedAccountTransactionIfNeeded(currentUser, toAccount, TransactionType.INCOME, saved.getAmount());
         recurringPaymentService.markRecurringAsPaidByTransaction(
                 category,
                 toAccount.getOwner(),
@@ -203,6 +204,7 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
+        notifySharedAccountTransactionIfNeeded(currentUser, fromAccount, TransactionType.EXPENSE, saved.getAmount());
         recurringPaymentService.markRecurringAsPaidByTransaction(
                 category,
                 fromAccount.getOwner(),
@@ -234,6 +236,7 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
+        notifySharedAccountTransactionIfNeeded(currentUser, fromAccount, TransactionType.TRANSFER, saved.getAmount());
 
         if (!fromAccount.getOwner().getId().equals(toAccount.getOwner().getId())) {
             notificationService.notifyMoneyReceived(
@@ -294,6 +297,20 @@ public class TransactionService {
         if (!transaction.getCreatedBy().getId().equals(currentUser.getId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You can only modify your own transactions");
         }
+    }
+
+    private void notifySharedAccountTransactionIfNeeded(User currentUser, Account account, TransactionType type, BigDecimal amount) {
+        if (account.getOwner().getId().equals(currentUser.getId())) {
+            return;
+        }
+
+        notificationService.notifySharedAccountTransaction(
+                account.getOwner(),
+                currentUser,
+                account,
+                type,
+                amount
+        );
     }
 
     @Transactional(readOnly = true)

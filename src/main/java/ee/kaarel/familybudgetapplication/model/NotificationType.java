@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.model;
 
 public enum NotificationType {
     MONEY_RECEIVED,
+    SHARED_ACCOUNT_TRANSACTION,
     ACCOUNT_DELETION_APPROVAL_REQUIRED,
     ACCOUNT_SHARED,
     ACCOUNT_UNSHARED,
