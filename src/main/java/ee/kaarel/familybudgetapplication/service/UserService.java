@@ -211,6 +211,6 @@ public class UserService {
         if (currentUser.getRole() == Role.PARENT) {
             return true;
         }
-        return targetUser.getId().equals(currentUser.getId());
+        return !targetUser.getId().equals(currentUser.getId());
     }
 }

@@ -265,13 +265,12 @@ public class TransactionService {
             throw new ApiException(HttpStatus.FORBIDDEN, "You can only transfer from accounts you can edit");
         }
 
-        accountService.ensureCanAccessAccount(currentUser, toAccount);
-
         boolean sameOwner = fromAccount.getOwner().getId().equals(toAccount.getOwner().getId());
         if (sameOwner) {
             return;
         }
 
+        userService.ensureSelectableUser(currentUser, toAccount.getOwner());
         if (toAccount.getType() != AccountType.MAIN || !toAccount.isDefault()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers to other users must go to their default MAIN account");
         }
