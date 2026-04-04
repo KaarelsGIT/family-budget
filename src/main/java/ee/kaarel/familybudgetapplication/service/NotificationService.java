@@ -25,6 +25,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class NotificationService {
@@ -159,6 +160,12 @@ public class NotificationService {
         return new ListResponse<>(page.map(this::toResponse).getContent(), page.getTotalElements());
     }
 
+    @Transactional
+    public void deleteAllNotificationsForCurrentUser() {
+        User currentUser = currentUserService.getCurrentUser();
+        notificationRepository.deleteAllByUser(currentUser);
+    }
+
     @Transactional(readOnly = true)
     public long getUnreadCount() {
         User currentUser = currentUserService.getCurrentUser();
@@ -183,6 +190,12 @@ public class NotificationService {
         List<Notification> unreadNotifications = notificationRepository.findAllByUserAndIsReadFalse(currentUser);
         unreadNotifications.forEach(notification -> notification.setRead(true));
         notificationRepository.saveAll(unreadNotifications);
+    }
+
+    @Scheduled(cron = "0 30 3 * * *", zone = "Europe/Tallinn")
+    @Transactional
+    public void deleteExpiredNotifications() {
+        notificationRepository.deleteAllByCreatedAtBefore(OffsetDateTime.now().minusDays(10));
     }
 
     public NotificationResponse toResponse(Notification notification) {
