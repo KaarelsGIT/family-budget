@@ -294,6 +294,7 @@ public class AccountService {
             }
             return cb.or(
                     cb.equal(root.get("owner").get("id"), currentUser.getId()),
+                    cb.equal(root.get("owner").get("role"), Role.ADMIN),
                     cb.equal(root.get("owner").get("role"), Role.CHILD),
                     cb.equal(accountUserJoin.get("user").get("id"), currentUser.getId())
             );
@@ -395,7 +396,7 @@ public class AccountService {
             return accountUserRepository.findByAccountAndUser(account, currentUser).isPresent();
         }
 
-        if (account.getOwner().getRole() == Role.CHILD) {
+        if (account.getOwner().getRole() == Role.CHILD || account.getOwner().getRole() == Role.ADMIN) {
             return true;
         }
 
