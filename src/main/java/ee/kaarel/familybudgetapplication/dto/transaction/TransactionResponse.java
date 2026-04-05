@@ -8,6 +8,7 @@ import java.time.OffsetDateTime;
 public record TransactionResponse(
         Long id,
         BigDecimal amount,
+        String transferId,
         TransactionType type,
         Long fromAccountId,
         String fromAccountName,

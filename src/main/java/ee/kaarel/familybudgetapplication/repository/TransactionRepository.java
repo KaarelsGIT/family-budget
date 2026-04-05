@@ -42,8 +42,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             left join t.category category
             left join category.parentCategory parentCategory
             where year(t.transactionDate) = :year
+            and (:userId is null or t.createdBy.id = :userId)
             and (:accountId is null or fromAccount.id = :accountId or toAccount.id = :accountId)
-            and (:restrictToCurrentUser = false or t.createdBy.id = :currentUserId or fromAccount.owner.id = :currentUserId or toAccount.owner.id = :currentUserId)
+            and (fromAccount.id in :visibleAccountIds or toAccount.id in :visibleAccountIds)
             group by
                 month(t.transactionDate),
                 t.type,
@@ -60,9 +61,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             """)
     List<YearlyStatisticsRow> findYearlyStatisticsRows(
             @Param("year") int year,
+            @Param("userId") Long userId,
             @Param("accountId") Long accountId,
-            @Param("currentUserId") Long currentUserId,
-            @Param("restrictToCurrentUser") boolean restrictToCurrentUser
+            @Param("visibleAccountIds") Collection<Long> visibleAccountIds
     );
 
     @Query("""

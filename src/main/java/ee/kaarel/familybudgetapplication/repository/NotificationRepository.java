@@ -21,6 +21,15 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
 
     boolean existsByUserAndTypeAndRelatedReminderId(User user, NotificationType type, Long relatedReminderId);
 
+    boolean existsByUserAndTypeAndRelatedTransactionId(User user, NotificationType type, Long relatedTransactionId);
+
+    boolean existsByUserAndTypeAndRelatedTransactionIdAndRelatedAccountId(
+            User user,
+            NotificationType type,
+            Long relatedTransactionId,
+            Long relatedAccountId
+    );
+
     void deleteAllByUser(User user);
 
     void deleteAllByCreatedAtBefore(OffsetDateTime cutoff);

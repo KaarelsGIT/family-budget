@@ -45,6 +45,12 @@ public class Notification {
     @Column(name = "related_reminder_id")
     private Long relatedReminderId;
 
+    @Column(name = "related_transaction_id")
+    private Long relatedTransactionId;
+
+    @Column(name = "related_account_id")
+    private Long relatedAccountId;
+
     @Column(nullable = false)
     private boolean isRead;
 

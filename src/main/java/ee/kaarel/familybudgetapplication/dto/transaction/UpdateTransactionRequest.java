@@ -8,6 +8,8 @@ import java.time.LocalDate;
 
 public record UpdateTransactionRequest(
         @NotNull @DecimalMin(value = "0.01") BigDecimal amount,
+        Long fromAccountId,
+        Long toAccountId,
         @NotNull LocalDate transactionDate,
         @Size(max = 500) String comment
 ) {

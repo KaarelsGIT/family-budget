@@ -149,6 +149,7 @@ class RecurringTransactionServiceTest {
         TransactionResponse transactionResponse = new TransactionResponse(
                 99L,
                 BigDecimal.valueOf(1865.92),
+                null,
                 TransactionType.INCOME,
                 null,
                 null,

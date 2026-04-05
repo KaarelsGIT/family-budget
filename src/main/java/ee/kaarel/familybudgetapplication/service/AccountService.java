@@ -77,6 +77,11 @@ public class AccountService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public List<Account> getVisibleAccounts(User currentUser) {
+        return accountRepository.findAll(visibleAccountSpecification(currentUser), Sort.by("owner.username").ascending().and(Sort.by("name").ascending()));
+    }
+
     @Transactional
     public AccountResponse createAccount(CreateAccountRequest request) {
         User currentUser = currentUserService.getCurrentUser();

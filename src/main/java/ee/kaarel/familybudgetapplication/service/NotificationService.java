@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
+import ee.kaarel.familybudgetapplication.model.AccountUser;
 import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.dto.notification.NotificationResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
@@ -11,6 +12,7 @@ import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.RecurringTransaction;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.TransactionReminder;
+import ee.kaarel.familybudgetapplication.repository.AccountUserRepository;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
@@ -31,15 +33,18 @@ import org.springframework.scheduling.annotation.Scheduled;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final AccountUserRepository accountUserRepository;
     private final UserRepository userRepository;
     private final CurrentUserService currentUserService;
 
     public NotificationService(
             NotificationRepository notificationRepository,
+            AccountUserRepository accountUserRepository,
             UserRepository userRepository,
             CurrentUserService currentUserService
     ) {
         this.notificationRepository = notificationRepository;
+        this.accountUserRepository = accountUserRepository;
         this.userRepository = userRepository;
         this.currentUserService = currentUserService;
     }
@@ -61,6 +66,16 @@ public class NotificationService {
 
     @Transactional
     public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId) {
+        createNotification(user, type, message, action, relatedCategoryId, relatedReminderId, null, null);
+    }
+
+    @Transactional
+    public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId, Long relatedTransactionId) {
+        createNotification(user, type, message, action, relatedCategoryId, relatedReminderId, relatedTransactionId, null);
+    }
+
+    @Transactional
+    public void createNotification(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId, Long relatedTransactionId, Long relatedAccountId) {
         Notification notification = new Notification();
         notification.setUser(user);
         notification.setType(type);
@@ -68,6 +83,8 @@ public class NotificationService {
         notification.setAction(action);
         notification.setRelatedCategoryId(relatedCategoryId);
         notification.setRelatedReminderId(relatedReminderId);
+        notification.setRelatedTransactionId(relatedTransactionId);
+        notification.setRelatedAccountId(relatedAccountId);
         notification.setRead(false);
         notification.setCreatedAt(OffsetDateTime.now());
         notificationRepository.save(notification);
@@ -96,15 +113,32 @@ public class NotificationService {
 
     @Transactional
     public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId) {
+        createNotificationIfAbsent(user, type, message, action, relatedCategoryId, relatedReminderId, null, null);
+    }
+
+    @Transactional
+    public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId, Long relatedTransactionId) {
+        createNotificationIfAbsent(user, type, message, action, relatedCategoryId, relatedReminderId, relatedTransactionId, null);
+    }
+
+    @Transactional
+    public void createNotificationIfAbsent(User user, NotificationType type, String message, String action, Long relatedCategoryId, Long relatedReminderId, Long relatedTransactionId, Long relatedAccountId) {
+        if (relatedTransactionId != null) {
+            if (!notificationRepository.existsByUserAndTypeAndRelatedTransactionIdAndRelatedAccountId(user, type, relatedTransactionId, relatedAccountId)) {
+                createNotification(user, type, message, action, relatedCategoryId, relatedReminderId, relatedTransactionId, relatedAccountId);
+            }
+            return;
+        }
+
         if (relatedReminderId != null) {
             if (!notificationRepository.existsByUserAndTypeAndRelatedReminderId(user, type, relatedReminderId)) {
-                createNotification(user, type, message, action, relatedCategoryId, relatedReminderId);
+                createNotification(user, type, message, action, relatedCategoryId, relatedReminderId, null, relatedAccountId);
             }
             return;
         }
 
         if (!notificationRepository.existsByUserAndTypeAndMessage(user, type, message)) {
-            createNotification(user, type, message, action, relatedCategoryId, null);
+            createNotification(user, type, message, action, relatedCategoryId, null, null, relatedAccountId);
         }
     }
 
@@ -130,8 +164,52 @@ public class NotificationService {
         createNotification(
                 recipient,
                 NotificationType.SHARED_ACCOUNT_TRANSACTION,
-                localizeSharedAccountTransactionMessage(recipient, actor.getUsername(), account.getName(), transactionType, amount)
+                localizeTransactionActivityMessage(
+                        recipient,
+                        actor.getUsername(),
+                        account.getName(),
+                        transactionType,
+                        amount,
+                        null,
+                        null,
+                        NotificationType.SHARED_ACCOUNT_TRANSACTION
+                )
         );
+    }
+
+    @Transactional
+    public void notifySharedAccountTransactionUsers(
+            Account account,
+            User actor,
+            TransactionType transactionType,
+            BigDecimal amount,
+            Long transactionId,
+            NotificationType notificationType
+    ) {
+        List<AccountUser> accountUsers = accountUserRepository.findAllByAccount(account);
+        accountUsers.stream()
+                .map(AccountUser::getUser)
+                .filter(user -> !user.getId().equals(actor.getId()))
+                .distinct()
+                .forEach(recipient -> createNotificationIfAbsent(
+                        recipient,
+                        notificationType,
+                        localizeTransactionActivityMessage(
+                                recipient,
+                                actor.getUsername(),
+                                account.getName(),
+                                transactionType,
+                                amount,
+                                transactionId,
+                                account.getId(),
+                                notificationType
+                        ),
+                        null,
+                        null,
+                        null,
+                        transactionId,
+                        account.getId()
+                ));
     }
 
     @Transactional
@@ -206,6 +284,8 @@ public class NotificationService {
                 notification.getAction(),
                 notification.getRelatedCategoryId(),
                 notification.getRelatedReminderId(),
+                notification.getRelatedTransactionId(),
+                notification.getRelatedAccountId(),
                 notification.isRead(),
                 notification.getCreatedAt()
         );
@@ -269,20 +349,44 @@ public class NotificationService {
         };
     }
 
-    private String localizeSharedAccountTransactionMessage(
+    private String localizeTransactionActivityMessage(
             User recipient,
             String actorUsername,
             String accountName,
             TransactionType transactionType,
-            BigDecimal amount
+            BigDecimal amount,
+            Long transactionId,
+            Long relatedAccountId,
+            NotificationType notificationType
     ) {
         String preferredLanguage = resolvePreferredLanguage(recipient);
         String formattedAmount = formatCurrency(preferredLanguage, amount);
         String transactionText = localizeTransactionType(transactionType, preferredLanguage);
+        String actionText = localizeTransactionAction(notificationType, preferredLanguage);
         return switch (preferredLanguage) {
-            case "en" -> actorUsername + " added a " + transactionText + " of " + formattedAmount + " on shared account " + accountName;
-            case "fi" -> actorUsername + " lisäsi " + transactionText + " " + formattedAmount + " jaetulle tilille " + accountName;
-            default -> actorUsername + " tegi " + transactionText + " summas " + formattedAmount + " jagatud kontol " + accountName;
+            case "en" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " from " + accountName;
+            case "fi" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " tililtä " + accountName;
+            default -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " kontolt " + accountName;
+        };
+    }
+
+    private String localizeTransactionAction(NotificationType notificationType, String language) {
+        return switch (notificationType) {
+            case TRANSACTION_UPDATED -> switch (language) {
+                case "en" -> "updated";
+                case "fi" -> "muokkasi";
+                default -> "muutis";
+            };
+            case TRANSACTION_DELETED -> switch (language) {
+                case "en" -> "deleted";
+                case "fi" -> "poisti";
+                default -> "kustutas";
+            };
+            default -> switch (language) {
+                case "en" -> "added";
+                case "fi" -> "lisäsi";
+                default -> "lisas";
+            };
         };
     }
 

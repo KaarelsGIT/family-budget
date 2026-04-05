@@ -10,6 +10,8 @@ public record NotificationResponse(
         String action,
         Long relatedCategoryId,
         Long relatedReminderId,
+        Long relatedTransactionId,
+        Long relatedAccountId,
         boolean isRead,
         OffsetDateTime createdAt
 ) {

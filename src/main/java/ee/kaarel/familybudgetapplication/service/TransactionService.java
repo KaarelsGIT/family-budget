@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.math.BigDecimal;
+import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -118,11 +119,11 @@ public class TransactionService {
     public TransactionResponse update(Long id, UpdateTransactionRequest request) {
         User currentUser = currentUserService.getCurrentUser();
         Transaction transaction = getTransaction(id);
-        ensureEditableByCreator(currentUser, transaction);
-
         if (transaction.getType() == TransactionType.TRANSFER) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers cannot be edited");
+            return updateTransfer(currentUser, transaction, request);
         }
+
+        ensureEditableByCreator(currentUser, transaction);
 
         if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction amount must be greater than zero");
@@ -141,20 +142,37 @@ public class TransactionService {
         transaction.setTransactionDate(request.transactionDate());
         transaction.setComment(request.comment());
 
-        return toResponse(transactionRepository.save(transaction));
+        Transaction saved = transactionRepository.save(transaction);
+        notifySharedAccountTransactionIfNeeded(getTransactionAccount(saved), saved.getType(), saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        return toResponse(saved);
     }
 
     @Transactional
     public void delete(Long id) {
         User currentUser = currentUserService.getCurrentUser();
         Transaction transaction = getTransaction(id);
-        ensureEditableByCreator(currentUser, transaction);
-
         if (transaction.getType() == TransactionType.TRANSFER) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers cannot be deleted");
+            deleteTransfer(currentUser, transaction);
+            return;
         }
 
+        ensureEditableByCreator(currentUser, transaction);
+        notifySharedAccountTransactionIfNeeded(getTransactionAccount(transaction), transaction.getType(), transaction.getAmount(), transaction.getId(), NotificationType.TRANSACTION_DELETED);
         transactionRepository.delete(transaction);
+    }
+
+    @Transactional
+    public TransactionResponse updateTransfer(Long id, UpdateTransactionRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+        Transaction transaction = getTransaction(id);
+        return updateTransfer(currentUser, transaction, request);
+    }
+
+    @Transactional
+    public void deleteTransfer(Long id) {
+        User currentUser = currentUserService.getCurrentUser();
+        Transaction transaction = getTransaction(id);
+        deleteTransfer(currentUser, transaction);
     }
 
     private TransactionResponse createIncome(User currentUser, CreateTransactionRequest request, Category category) {
@@ -175,7 +193,7 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
-        notifySharedAccountTransactionIfNeeded(currentUser, toAccount, TransactionType.INCOME, saved.getAmount());
+        notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.INCOME, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
         recurringPaymentService.markRecurringAsPaidByTransaction(
                 category,
                 toAccount.getOwner(),
@@ -204,7 +222,7 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
-        notifySharedAccountTransactionIfNeeded(currentUser, fromAccount, TransactionType.EXPENSE, saved.getAmount());
+        notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.EXPENSE, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
         recurringPaymentService.markRecurringAsPaidByTransaction(
                 category,
                 fromAccount.getOwner(),
@@ -228,6 +246,7 @@ public class TransactionService {
 
         Transaction transaction = new Transaction();
         transaction.setAmount(request.amount());
+        transaction.setTransferId(UUID.randomUUID().toString());
         transaction.setType(TransactionType.TRANSFER);
         transaction.setFromAccount(fromAccount);
         transaction.setToAccount(toAccount);
@@ -236,7 +255,8 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
-        notifySharedAccountTransactionIfNeeded(currentUser, fromAccount, TransactionType.TRANSFER, saved.getAmount());
+        notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
+        notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
 
         if (!fromAccount.getOwner().getId().equals(toAccount.getOwner().getId())) {
             notificationService.notifyMoneyReceived(
@@ -285,6 +305,20 @@ public class TransactionService {
         }
     }
 
+    private void ensureTransferWillNotGoNegative(Transaction transaction, Account newFromAccount, BigDecimal newAmount) {
+        BigDecimal availableAfterReversal = accountService.getCalculatedBalance(newFromAccount);
+
+        if (transaction.getFromAccount() != null && transaction.getFromAccount().getId().equals(newFromAccount.getId())) {
+            availableAfterReversal = availableAfterReversal.add(transaction.getAmount());
+        } else if (transaction.getToAccount() != null && transaction.getToAccount().getId().equals(newFromAccount.getId())) {
+            availableAfterReversal = availableAfterReversal.subtract(transaction.getAmount());
+        }
+
+        if (newAmount.compareTo(availableAfterReversal) > 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Kontol ei ole piisavalt raha");
+        }
+    }
+
     private void ensureExpenseUpdateWillNotGoNegative(Transaction transaction, Account account, BigDecimal newAmount) {
         BigDecimal currentBalance = accountService.getCalculatedBalance(account);
         BigDecimal availableAfterRestoringCurrentAmount = currentBalance.add(transaction.getAmount());
@@ -293,24 +327,84 @@ public class TransactionService {
         }
     }
 
+    private TransactionResponse updateTransfer(User currentUser, Transaction transaction, UpdateTransactionRequest request) {
+        if (request.fromAccountId() == null || request.toAccountId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and toAccount");
+        }
+        if (request.fromAccountId().equals(request.toAccountId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
+        }
+        if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction amount must be greater than zero");
+        }
+        if (request.transactionDate() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction date is required");
+        }
+
+        Account newFromAccount = accountService.getAccount(request.fromAccountId());
+        Account newToAccount = accountService.getAccount(request.toAccountId());
+        ensureTransferEditableByUser(currentUser, transaction, newFromAccount, newToAccount);
+        validateTransfer(currentUser, newFromAccount, newToAccount);
+        ensureTransferWillNotGoNegative(transaction, newFromAccount, request.amount());
+
+        transaction.setAmount(request.amount());
+        transaction.setFromAccount(newFromAccount);
+        transaction.setToAccount(newToAccount);
+        transaction.setTransactionDate(request.transactionDate());
+        transaction.setComment(request.comment());
+
+        Transaction saved = transactionRepository.save(transaction);
+        notifySharedAccountTransactionIfNeeded(newFromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        notifySharedAccountTransactionIfNeeded(newToAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        return toResponse(saved);
+    }
+
+    private void deleteTransfer(User currentUser, Transaction transaction) {
+        Account fromAccount = transaction.getFromAccount();
+        Account toAccount = transaction.getToAccount();
+        ensureTransferEditableByUser(currentUser, transaction, fromAccount, toAccount);
+
+        notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.TRANSFER, transaction.getAmount(), transaction.getId(), NotificationType.TRANSACTION_DELETED);
+        notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.TRANSFER, transaction.getAmount(), transaction.getId(), NotificationType.TRANSACTION_DELETED);
+        transactionRepository.delete(transaction);
+    }
+
     private void ensureEditableByCreator(User currentUser, Transaction transaction) {
         if (!transaction.getCreatedBy().getId().equals(currentUser.getId())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You can only modify your own transactions");
         }
     }
 
-    private void notifySharedAccountTransactionIfNeeded(User currentUser, Account account, TransactionType type, BigDecimal amount) {
-        if (account.getOwner().getId().equals(currentUser.getId())) {
+    private void ensureTransferEditableByUser(User currentUser, Transaction transaction, Account newFromAccount, Account newToAccount) {
+        if (currentUser.getRole() == Role.ADMIN) {
             return;
         }
 
-        notificationService.notifySharedAccountTransaction(
-                account.getOwner(),
-                currentUser,
+        if (transaction.getCreatedBy().getId().equals(currentUser.getId())) {
+            return;
+        }
+
+        accountService.ensureCanAccessAccount(currentUser, newFromAccount);
+        accountService.ensureCanAccessAccount(currentUser, newToAccount);
+
+        if (!accountService.canTransactFromAccount(currentUser, newFromAccount)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot modify transactions for this account");
+        }
+    }
+
+    private void notifySharedAccountTransactionIfNeeded(Account account, TransactionType type, BigDecimal amount, Long transactionId, NotificationType notificationType) {
+        notificationService.notifySharedAccountTransactionUsers(
                 account,
+                currentUserService.getCurrentUser(),
                 type,
-                amount
+                amount,
+                transactionId,
+                notificationType
         );
+    }
+
+    private Account getTransactionAccount(Transaction transaction) {
+        return transaction.getType() == TransactionType.INCOME ? transaction.getToAccount() : transaction.getFromAccount();
     }
 
     @Transactional(readOnly = true)
@@ -414,6 +508,7 @@ public class TransactionService {
         return new TransactionResponse(
                 transaction.getId(),
                 transaction.getAmount(),
+                transaction.getTransferId(),
                 transaction.getType(),
                 transaction.getFromAccount() == null ? null : transaction.getFromAccount().getId(),
                 transaction.getFromAccount() == null ? null : transaction.getFromAccount().getName(),

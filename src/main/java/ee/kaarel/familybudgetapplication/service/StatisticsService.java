@@ -2,13 +2,14 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsResponse;
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsRow;
+import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
-import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -24,21 +25,47 @@ public class StatisticsService {
 
     private final TransactionRepository transactionRepository;
     private final CurrentUserService currentUserService;
+    private final AccountService accountService;
+    private final UserService userService;
 
-    public StatisticsService(TransactionRepository transactionRepository, CurrentUserService currentUserService) {
+    public StatisticsService(
+            TransactionRepository transactionRepository,
+            CurrentUserService currentUserService,
+            AccountService accountService,
+            UserService userService
+    ) {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
+        this.accountService = accountService;
+        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
-    public YearlyStatisticsResponse getYearly(int year, Long accountId) {
+    public YearlyStatisticsResponse getYearly(Integer year, Long userId, Long accountId) {
         User currentUser = currentUserService.getCurrentUser();
-        boolean restrictToCurrentUser = currentUser.getRole() == Role.CHILD;
+        int effectiveYear = year != null ? year : LocalDate.now().getYear();
+        User effectiveUser = userId == null ? currentUser : userService.findUser(userId);
+        if (userId != null) {
+            userService.ensureSelectableUser(currentUser, effectiveUser);
+        }
+
+        List<Long> visibleAccountIds = accountService.getVisibleAccounts(currentUser).stream()
+                .map(Account::getId)
+                .toList();
+
+        if (accountId != null && visibleAccountIds.stream().noneMatch((visibleId) -> visibleId.equals(accountId))) {
+            throw new ee.kaarel.familybudgetapplication.appConfig.ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "You cannot access this account");
+        }
+
+        if (visibleAccountIds.isEmpty()) {
+            return emptyStatistics(effectiveYear);
+        }
+
         List<YearlyStatisticsRow> rows = transactionRepository.findYearlyStatisticsRows(
-                year,
+                effectiveYear,
+                effectiveUser.getId(),
                 accountId,
-                currentUser.getId(),
-                restrictToCurrentUser
+                visibleAccountIds
         );
 
         Map<Integer, MonthlyAccumulator> monthly = new LinkedHashMap<>();
@@ -158,7 +185,7 @@ public class StatisticsService {
         BigDecimal net = income.subtract(expenses);
 
         return new YearlyStatisticsResponse(
-                year,
+                effectiveYear,
                 new YearlyStatisticsResponse.Totals(
                         income,
                         expenses,
@@ -170,6 +197,24 @@ public class StatisticsService {
                 new YearlyStatisticsResponse.Categories(incomeCategoryEntries, expenseCategoryEntries),
                 accountEntries,
                 new YearlyStatisticsResponse.Transfers(transfersTotalAmount, transfersCount, transferMonthlyEntries)
+        );
+    }
+
+    private YearlyStatisticsResponse emptyStatistics(int year) {
+        List<YearlyStatisticsResponse.MonthlyEntry> monthlyEntries = new ArrayList<>(12);
+        List<YearlyStatisticsResponse.MonthlyTransferEntry> transferMonthlyEntries = new ArrayList<>(12);
+        for (int month = 1; month <= 12; month++) {
+            monthlyEntries.add(new YearlyStatisticsResponse.MonthlyEntry(month, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO));
+            transferMonthlyEntries.add(new YearlyStatisticsResponse.MonthlyTransferEntry(month, BigDecimal.ZERO, 0L));
+        }
+
+        return new YearlyStatisticsResponse(
+                year,
+                new YearlyStatisticsResponse.Totals(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO),
+                monthlyEntries,
+                new YearlyStatisticsResponse.Categories(List.of(), List.of()),
+                List.of(),
+                new YearlyStatisticsResponse.Transfers(BigDecimal.ZERO, 0L, transferMonthlyEntries)
         );
     }
 
