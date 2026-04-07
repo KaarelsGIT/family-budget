@@ -17,6 +17,9 @@ import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +27,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class UserService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
@@ -71,6 +76,7 @@ public class UserService {
         user.setUsername(request.username());
         user.setPassword(passwordEncoder.encode(request.password()));
         user.setRole(request.role());
+        user.setFamilyId(getEffectiveFamilyId(currentUser));
         user.setStatus(UserStatus.PENDING);
         user.setPreferredLanguage("et");
         User savedUser = userRepository.save(user);
@@ -114,12 +120,21 @@ public class UserService {
     @Transactional(readOnly = true)
     public List<UserResponse> getTransferTargets() {
         User currentUser = currentUserService.getCurrentUser();
-        List<Account> visibleAccounts = accountService.getVisibleAccounts(currentUser);
-        return userRepository.findAll().stream()
-                .filter(user -> canTransferToUser(currentUser, user, visibleAccounts))
+        Long familyId = currentUser.getFamilyId();
+        List<UserResponse> transferTargets = userRepository.findAllByFamilyId(familyId).stream()
+                .filter(user -> canTransferToUser(currentUser, user))
                 .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
                 .map(this::toResponse)
                 .toList();
+
+        log.info(
+                "Transfer targets lookup: currentUser.id={}, currentUser.family_id={}, targetsReturned={}",
+                currentUser.getId(),
+                currentUser.getFamilyId(),
+                transferTargets.size()
+        );
+
+        return transferTargets;
     }
 
     @Transactional(readOnly = true)
@@ -131,7 +146,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public void ensureTransferTargetAllowed(User currentUser, User targetUser) {
-        if (!canTransferToUser(currentUser, targetUser, accountService.getVisibleAccounts(currentUser))) {
+        if (!canTransferToUser(currentUser, targetUser)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user");
         }
     }
@@ -237,21 +252,8 @@ public class UserService {
         return !targetUser.getId().equals(currentUser.getId());
     }
 
-    private boolean canTransferToUser(User currentUser, User targetUser, List<Account> visibleAccounts) {
-        if (targetUser.getId().equals(currentUser.getId())) {
-            return true;
-        }
-
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
-        if (targetUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
-        return visibleAccounts.stream()
-                .anyMatch(account -> account.getOwner().getId().equals(targetUser.getId()));
+    private boolean canTransferToUser(User currentUser, User targetUser) {
+        return Objects.equals(currentUser.getFamilyId(), targetUser.getFamilyId());
     }
 
     private boolean canShowSelectableUser(User currentUser, User targetUser) {
@@ -262,5 +264,9 @@ public class UserService {
             return true;
         }
         return targetUser.getId().equals(currentUser.getId());
+    }
+
+    private Long getEffectiveFamilyId(User user) {
+        return user.getFamilyId() != null ? user.getFamilyId() : user.getId();
     }
 }

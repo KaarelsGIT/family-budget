@@ -33,9 +33,12 @@ public class DataInitializer {
             admin.setUsername("admin");
             admin.setPassword(passwordEncoder.encode("admin"));
             admin.setRole(Role.ADMIN);
+            admin.setFamilyId(null);
             admin.setStatus(UserStatus.ACTIVE);
             admin.setPreferredLanguage("et");
             User savedAdmin = userRepository.save(admin);
+            savedAdmin.setFamilyId(savedAdmin.getId());
+            savedAdmin = userRepository.save(savedAdmin);
 
             Account account = new Account();
             account.setName("admin MAIN");

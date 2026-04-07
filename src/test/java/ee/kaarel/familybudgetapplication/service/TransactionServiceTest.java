@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -60,7 +61,7 @@ class TransactionServiceTest {
 
     @Test
     void updateNotifiesSharedUsersWithUpdatedType() {
-        User actor = createUser(1L, "John");
+        User actor = createUser(1L, "John", 100L);
         Account account = createAccount(10L, actor, "Shared Account");
         Transaction transaction = createTransaction(100L, actor, account, TransactionType.EXPENSE, BigDecimal.valueOf(20));
 
@@ -86,7 +87,7 @@ class TransactionServiceTest {
 
     @Test
     void deleteNotifiesSharedUsersWithDeletedType() {
-        User actor = createUser(1L, "John");
+        User actor = createUser(1L, "John", 100L);
         Account account = createAccount(10L, actor, "Shared Account");
         Transaction transaction = createTransaction(100L, actor, account, TransactionType.INCOME, BigDecimal.valueOf(20));
 
@@ -107,8 +108,8 @@ class TransactionServiceTest {
 
     @Test
     void updateTransferAllowsSharedEditorAndNotifiesBothAccounts() {
-        User actor = createUser(1L, "John");
-        User recipient = createUser(2L, "Jane");
+        User actor = createUser(1L, "John", 100L);
+        User recipient = createUser(2L, "Jane", 100L);
         Account fromAccount = createAccount(10L, actor, "Source");
         Account toAccount = createAccount(20L, recipient, "Target");
         fromAccount.setType(AccountType.MAIN);
@@ -119,7 +120,6 @@ class TransactionServiceTest {
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of(toAccount));
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
         when(userService.findUser(recipient.getId())).thenReturn(recipient);
         when(accountService.getTransferTargetMainAccount(recipient)).thenReturn(toAccount);
@@ -154,12 +154,18 @@ class TransactionServiceTest {
                 eq(transaction.getId()),
                 eq(NotificationType.TRANSACTION_UPDATED)
         );
+        verify(notificationService).notifyMoneyReceived(
+                eq(recipient),
+                eq(actor),
+                eq(BigDecimal.valueOf(30)),
+                eq("Source")
+        );
     }
 
     @Test
     void createTransferUsesTargetUser() {
-        User actor = createUser(1L, "John");
-        User recipient = createUser(2L, "Jane");
+        User actor = createUser(1L, "John", 100L);
+        User recipient = createUser(2L, "Jane", 100L);
         Account fromAccount = createAccount(10L, actor, "Source");
         Account toAccount = createAccount(20L, recipient, "Target");
         fromAccount.setType(AccountType.MAIN);
@@ -168,7 +174,6 @@ class TransactionServiceTest {
 
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of(toAccount));
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
         when(userService.findUser(recipient.getId())).thenReturn(recipient);
         when(accountService.getTransferTargetMainAccount(recipient)).thenReturn(toAccount);
@@ -181,6 +186,7 @@ class TransactionServiceTest {
                 fromAccount.getId(),
                 null,
                 recipient.getId(),
+                null,
                 LocalDate.now(),
                 "Transfer to account"
         ));
@@ -193,21 +199,27 @@ class TransactionServiceTest {
                 any(),
                 eq(NotificationType.TRANSACTION_CREATED)
         );
+        verify(notificationService).notifyMoneyReceived(
+                eq(recipient),
+                eq(actor),
+                eq(BigDecimal.valueOf(25)),
+                eq("Source")
+        );
     }
 
     @Test
     void createTransferRejectsUnauthorizedTargetAccount() {
-        User actor = createUser(1L, "John");
-        User otherChild = createUser(3L, "Kid");
+        User actor = createUser(1L, "John", 100L);
+        User otherChild = createUser(3L, "Kid", 200L);
         otherChild.setRole(Role.CHILD);
         Account fromAccount = createAccount(10L, actor, "Source");
         fromAccount.setType(AccountType.MAIN);
 
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of());
-        when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
         when(userService.findUser(otherChild.getId())).thenReturn(otherChild);
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user"))
+                .when(userService).ensureTransferTargetAllowed(actor, otherChild);
 
         ApiException exception = assertThrows(ApiException.class, () -> transactionService.create(
                 new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
@@ -216,6 +228,7 @@ class TransactionServiceTest {
                         fromAccount.getId(),
                         null,
                         otherChild.getId(),
+                        null,
                         LocalDate.now(),
                         "Transfer to account"
                 )
@@ -226,8 +239,8 @@ class TransactionServiceTest {
 
     @Test
     void deleteTransferNotifiesBothAccounts() {
-        User actor = createUser(1L, "John");
-        User recipient = createUser(2L, "Jane");
+        User actor = createUser(1L, "John", 100L);
+        User recipient = createUser(2L, "Jane", 100L);
         Account fromAccount = createAccount(10L, actor, "Source");
         Account toAccount = createAccount(20L, recipient, "Target");
         Transaction transaction = createTransferTransaction(100L, actor, fromAccount, toAccount, BigDecimal.valueOf(25));
@@ -255,12 +268,13 @@ class TransactionServiceTest {
         );
     }
 
-    private User createUser(Long id, String username) {
+    private User createUser(Long id, String username, Long familyId) {
         User user = new User();
         user.setId(id);
         user.setUsername(username);
         user.setPassword("password");
         user.setRole(Role.PARENT);
+        user.setFamilyId(familyId);
         user.setStatus(UserStatus.ACTIVE);
         user.setPreferredLanguage("en");
         return user;

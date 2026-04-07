@@ -237,7 +237,8 @@ public class TransactionService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and target user, and category must be null");
         }
         Account fromAccount = accountService.getAccount(request.fromAccountId());
-        Account toAccount = resolveTransferTargetAccount(currentUser, request);
+        User targetUser = resolveTransferTargetUser(currentUser, request);
+        Account toAccount = accountService.getTransferTargetMainAccount(targetUser);
         validateAccountModification(currentUser, fromAccount);
         if (fromAccount.getId().equals(toAccount.getId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
@@ -259,7 +260,7 @@ public class TransactionService {
         notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
 
         notificationService.notifyMoneyReceived(
-                resolveTransferTargetUser(currentUser, request),
+                targetUser,
                 fromAccount.getOwner(),
                 request.amount(),
                 fromAccount.getName()
@@ -327,7 +328,8 @@ public class TransactionService {
         }
 
         Account newFromAccount = accountService.getAccount(request.fromAccountId());
-        Account newToAccount = resolveTransferTargetAccount(currentUser, request);
+        User targetUser = resolveTransferTargetUser(currentUser, request);
+        Account newToAccount = accountService.getTransferTargetMainAccount(targetUser);
         ensureTransferEditableByUser(currentUser, transaction, newFromAccount, newToAccount);
         validateAccountModification(currentUser, newFromAccount);
         if (newFromAccount.getId().equals(newToAccount.getId())) {
@@ -345,7 +347,7 @@ public class TransactionService {
         notifySharedAccountTransactionIfNeeded(newFromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
         notifySharedAccountTransactionIfNeeded(newToAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
         notificationService.notifyMoneyReceived(
-                resolveTransferTargetUser(currentUser, request),
+                targetUser,
                 newFromAccount.getOwner(),
                 request.amount(),
                 newFromAccount.getName()
@@ -379,16 +381,6 @@ public class TransactionService {
         if (!accountService.canTransactFromAccount(currentUser, newFromAccount)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot modify transactions for this account");
         }
-    }
-
-    private Account resolveTransferTargetAccount(User currentUser, CreateTransactionRequest request) {
-        User targetUser = resolveTransferTargetUser(currentUser, request);
-        return accountService.getTransferTargetMainAccount(targetUser);
-    }
-
-    private Account resolveTransferTargetAccount(User currentUser, UpdateTransactionRequest request) {
-        User targetUser = resolveTransferTargetUser(currentUser, request);
-        return accountService.getTransferTargetMainAccount(targetUser);
     }
 
     private User resolveTransferTargetUser(User currentUser, CreateTransactionRequest request) {

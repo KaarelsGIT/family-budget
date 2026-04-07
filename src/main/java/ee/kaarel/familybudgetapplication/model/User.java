@@ -35,6 +35,9 @@ public class User {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    @Column(name = "family_id")
+    private Long familyId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private UserStatus status;
