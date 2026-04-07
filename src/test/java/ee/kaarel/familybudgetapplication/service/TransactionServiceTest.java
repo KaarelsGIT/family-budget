@@ -2,9 +2,12 @@ package ee.kaarel.familybudgetapplication.service;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
@@ -26,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 @ExtendWith(MockitoExtension.class)
 class TransactionServiceTest {
@@ -47,9 +51,6 @@ class TransactionServiceTest {
 
     @Mock
     private RecurringPaymentService recurringPaymentService;
-
-    @Mock
-    private UserService userService;
 
     @InjectMocks
     private TransactionService transactionService;
@@ -117,6 +118,7 @@ class TransactionServiceTest {
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
         when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
+        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(true);
         when(accountService.getCalculatedBalance(fromAccount)).thenReturn(BigDecimal.valueOf(100));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -147,6 +149,76 @@ class TransactionServiceTest {
                 eq(transaction.getId()),
                 eq(NotificationType.TRANSACTION_UPDATED)
         );
+    }
+
+    @Test
+    void createTransferUsesDestinationAccount() {
+        User actor = createUser(1L, "John");
+        User recipient = createUser(2L, "Jane");
+        Account fromAccount = createAccount(10L, actor, "Source");
+        Account toAccount = createAccount(20L, recipient, "Target");
+        fromAccount.setType(AccountType.MAIN);
+        toAccount.setType(AccountType.MAIN);
+        toAccount.setDefault(true);
+
+        when(currentUserService.getCurrentUser()).thenReturn(actor);
+        when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
+        when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
+        when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
+        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(true);
+        when(accountService.getCalculatedBalance(fromAccount)).thenReturn(BigDecimal.valueOf(100));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        transactionService.create(new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
+                BigDecimal.valueOf(25),
+                TransactionType.TRANSFER,
+                fromAccount.getId(),
+                toAccount.getId(),
+                null,
+                LocalDate.now(),
+                "Transfer to account"
+        ));
+
+        verify(notificationService).notifySharedAccountTransactionUsers(
+                eq(toAccount),
+                eq(actor),
+                eq(TransactionType.TRANSFER),
+                eq(BigDecimal.valueOf(25)),
+                any(),
+                eq(NotificationType.TRANSACTION_CREATED)
+        );
+    }
+
+    @Test
+    void createTransferRejectsUnauthorizedTargetAccount() {
+        User actor = createUser(1L, "John");
+        User recipient = createUser(2L, "Jane");
+        User otherChild = createUser(3L, "Kid");
+        otherChild.setRole(Role.CHILD);
+        Account fromAccount = createAccount(10L, actor, "Source");
+        Account toAccount = createAccount(20L, otherChild, "Target");
+        fromAccount.setType(AccountType.MAIN);
+        toAccount.setType(AccountType.MAIN);
+
+        when(currentUserService.getCurrentUser()).thenReturn(actor);
+        when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
+        when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
+        when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
+        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(false);
+
+        ApiException exception = assertThrows(ApiException.class, () -> transactionService.create(
+                new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
+                        BigDecimal.valueOf(25),
+                        TransactionType.TRANSFER,
+                        fromAccount.getId(),
+                        toAccount.getId(),
+                        null,
+                        LocalDate.now(),
+                        "Transfer to account"
+                )
+        ));
+
+        assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
     }
 
     @Test

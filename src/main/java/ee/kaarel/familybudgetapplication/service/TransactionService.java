@@ -37,7 +37,6 @@ public class TransactionService {
     private final CategoryService categoryService;
     private final NotificationService notificationService;
     private final RecurringPaymentService recurringPaymentService;
-    private final UserService userService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
@@ -45,8 +44,7 @@ public class TransactionService {
             AccountService accountService,
             CategoryService categoryService,
             NotificationService notificationService,
-            RecurringPaymentService recurringPaymentService,
-            UserService userService
+            RecurringPaymentService recurringPaymentService
     ) {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
@@ -54,7 +52,6 @@ public class TransactionService {
         this.categoryService = categoryService;
         this.notificationService = notificationService;
         this.recurringPaymentService = recurringPaymentService;
-        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
@@ -236,12 +233,12 @@ public class TransactionService {
         if (request.fromAccountId() == null || request.toAccountId() == null || request.categoryId() != null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and toAccount, and category must be null");
         }
-        if (request.fromAccountId().equals(request.toAccountId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
-        }
         Account fromAccount = accountService.getAccount(request.fromAccountId());
         Account toAccount = accountService.getAccount(request.toAccountId());
         validateTransfer(currentUser, fromAccount, toAccount);
+        if (fromAccount.getId().equals(toAccount.getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
+        }
         ensureBalanceWillNotGoNegative(fromAccount, request.amount());
 
         Transaction transaction = new Transaction();
@@ -284,18 +281,8 @@ public class TransactionService {
 
     private void validateTransfer(User currentUser, Account fromAccount, Account toAccount) {
         validateAccountModification(currentUser, fromAccount);
-        if (!accountService.canTransactFromAccount(currentUser, fromAccount)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "You can only transfer from accounts you can edit");
-        }
-
-        boolean sameOwner = fromAccount.getOwner().getId().equals(toAccount.getOwner().getId());
-        if (sameOwner) {
-            return;
-        }
-
-        userService.ensureSelectableUser(currentUser, toAccount.getOwner());
-        if (toAccount.getType() != AccountType.MAIN || !toAccount.isDefault()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfers to other users must go to their default MAIN account");
+        if (!accountService.canTransferToAccount(currentUser, toAccount)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this account");
         }
     }
 
@@ -331,9 +318,6 @@ public class TransactionService {
         if (request.fromAccountId() == null || request.toAccountId() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and toAccount");
         }
-        if (request.fromAccountId().equals(request.toAccountId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
-        }
         if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction amount must be greater than zero");
         }
@@ -345,6 +329,9 @@ public class TransactionService {
         Account newToAccount = accountService.getAccount(request.toAccountId());
         ensureTransferEditableByUser(currentUser, transaction, newFromAccount, newToAccount);
         validateTransfer(currentUser, newFromAccount, newToAccount);
+        if (newFromAccount.getId().equals(newToAccount.getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
+        }
         ensureTransferWillNotGoNegative(transaction, newFromAccount, request.amount());
 
         transaction.setAmount(request.amount());
@@ -385,7 +372,6 @@ public class TransactionService {
         }
 
         accountService.ensureCanAccessAccount(currentUser, newFromAccount);
-        accountService.ensureCanAccessAccount(currentUser, newToAccount);
 
         if (!accountService.canTransactFromAccount(currentUser, newFromAccount)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot modify transactions for this account");

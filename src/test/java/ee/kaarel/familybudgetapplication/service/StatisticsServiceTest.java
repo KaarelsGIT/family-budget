@@ -3,9 +3,11 @@ package ee.kaarel.familybudgetapplication.service;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.Assertions;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 @ExtendWith(MockitoExtension.class)
 class StatisticsServiceTest {
@@ -57,6 +60,21 @@ class StatisticsServiceTest {
         verify(transactionRepository).findYearlyStatisticsRows(2026, 1L, null, List.of(visibleAccount.getId()));
         Assertions.assertEquals(2026, response.year());
         Assertions.assertEquals(0, response.totals().income().compareTo(BigDecimal.ZERO));
+    }
+
+    @Test
+    void childCannotRequestStatisticsForAnotherUser() {
+        User currentUser = createUser(1L, "Child");
+        User otherUser = createUser(2L, "Parent");
+
+        currentUser.setRole(Role.CHILD);
+        otherUser.setRole(Role.PARENT);
+
+        when(currentUserService.getCurrentUser()).thenReturn(currentUser);
+
+        ApiException exception = assertThrows(ApiException.class, () -> statisticsService.getYearly(2026, otherUser.getId(), null));
+
+        Assertions.assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
     }
 
     private User createUser(Long id, String username) {

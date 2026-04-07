@@ -4,8 +4,10 @@ import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsResponse
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsRow;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
+import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
+import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -15,6 +17,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,8 +47,11 @@ public class StatisticsService {
     public YearlyStatisticsResponse getYearly(Integer year, Long userId, Long accountId) {
         User currentUser = currentUserService.getCurrentUser();
         int effectiveYear = year != null ? year : LocalDate.now().getYear();
+        if (userId != null && currentUser.getRole() == Role.CHILD && !currentUser.getId().equals(userId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot view statistics for this user");
+        }
         User effectiveUser = userId == null ? currentUser : userService.findUser(userId);
-        if (userId != null) {
+        if (userId != null && currentUser.getRole() != Role.CHILD) {
             userService.ensureSelectableUser(currentUser, effectiveUser);
         }
 

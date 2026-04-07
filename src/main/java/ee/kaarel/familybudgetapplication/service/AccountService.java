@@ -8,6 +8,8 @@ import ee.kaarel.familybudgetapplication.dto.account.AccountShareResponse;
 import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
+import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetUserResponse;
+import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountBalanceAdjustment;
 import ee.kaarel.familybudgetapplication.model.AccountUser;
@@ -27,6 +29,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -238,6 +241,55 @@ public class AccountService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Default account not found"));
     }
 
+    @Transactional(readOnly = true)
+    public Account getTransferTargetMainAccount(User user) {
+        List<Account> mainAccounts = accountRepository.findAllByOwner(user).stream()
+                .filter(account -> account.getType() == AccountType.MAIN && account.isDefault())
+                .toList();
+
+        if (mainAccounts.isEmpty()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "Target user has no main account");
+        }
+        if (mainAccounts.size() > 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Target user has multiple main accounts");
+        }
+
+        return mainAccounts.get(0);
+    }
+
+    @Transactional(readOnly = true)
+    public TransferTargetsResponse getTransferTargets() {
+        User currentUser = currentUserService.getCurrentUser();
+        List<Account> transferAccounts = accountRepository.findAll(Sort.by("owner.username").ascending().and(Sort.by("name").ascending()))
+                .stream()
+                .filter(account -> canTransferToAccount(currentUser, account))
+                .toList();
+
+        List<AccountResponse> myAccounts = transferAccounts.stream()
+                .filter(account -> account.getOwner().getId().equals(currentUser.getId()))
+                .map(account -> toResponse(account, getAccountRole(currentUser, account)))
+                .toList();
+
+        Map<Long, List<Account>> accountsByOwnerId = transferAccounts.stream()
+                .filter(account -> !account.getOwner().getId().equals(currentUser.getId()))
+                .collect(Collectors.groupingBy(account -> account.getOwner().getId()));
+
+        List<TransferTargetUserResponse> otherUsers = accountsByOwnerId.values().stream()
+                .map(accounts -> accounts.get(0).getOwner())
+                .sorted((left, right) -> left.getUsername().compareToIgnoreCase(right.getUsername()))
+                .map(owner -> new TransferTargetUserResponse(
+                        owner.getId(),
+                        owner.getUsername(),
+                        owner.getRole(),
+                        accountsByOwnerId.get(owner.getId()).stream()
+                                .map(account -> toResponse(account, getAccountRole(currentUser, account)))
+                                .toList()
+                ))
+                .toList();
+
+        return new TransferTargetsResponse(myAccounts, otherUsers);
+    }
+
     public void ensureCanAccessAccount(User currentUser, Account account) {
         if (currentUser.getRole() == Role.ADMIN) {
             return;
@@ -278,6 +330,19 @@ public class AccountService {
 
         AccountUserRole accountRole = getAccountRole(currentUser, account);
         return accountRole == AccountUserRole.OWNER || accountRole == AccountUserRole.EDITOR;
+    }
+
+    public boolean canTransferToAccount(User currentUser, Account account) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+
+        if (hasVisibleAccess(currentUser, account)) {
+            return true;
+        }
+
+        return currentUser.getRole() == Role.CHILD
+                && (account.getOwner().getRole() == Role.PARENT || account.getOwner().getRole() == Role.ADMIN);
     }
 
     private Specification<Account> visibleAccountSpecification(User currentUser) {

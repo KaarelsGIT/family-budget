@@ -91,7 +91,7 @@ public class UserService {
         User currentUser = currentUserService.getCurrentUser();
         if (selectable) {
             return userRepository.findAll().stream()
-                    .filter(user -> canSelectUser(currentUser, user))
+                    .filter(user -> canShowSelectableUser(currentUser, user))
                     .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
                     .map(this::toResponse)
                     .toList();
@@ -107,8 +107,31 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
+    public List<UserResponse> getFilterUsers() {
+        return getUsers(true);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserResponse> getTransferTargets() {
+        User currentUser = currentUserService.getCurrentUser();
+        List<Account> visibleAccounts = accountService.getVisibleAccounts(currentUser);
+        return userRepository.findAll().stream()
+                .filter(user -> canShowTransferTarget(currentUser, user, visibleAccounts))
+                .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public void ensureSelectableUser(User currentUser, User targetUser) {
         if (!canSelectUser(currentUser, targetUser)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user");
+        }
+    }
+
+    @Transactional(readOnly = true)
+    public void ensureTransferTargetAllowed(User currentUser, User targetUser) {
+        if (!canShowTransferTarget(currentUser, targetUser, accountService.getVisibleAccounts(currentUser))) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user");
         }
     }
@@ -212,5 +235,40 @@ public class UserService {
             return true;
         }
         return !targetUser.getId().equals(currentUser.getId());
+    }
+
+    private boolean canTransferToUser(User currentUser, User targetUser) {
+        if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) {
+            return true;
+        }
+
+        return canShowTransferTarget(currentUser, targetUser, accountService.getVisibleAccounts(currentUser));
+    }
+
+    private boolean canShowTransferTarget(User currentUser, User targetUser, List<Account> visibleAccounts) {
+        if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) {
+            return true;
+        }
+
+        if (targetUser.getId().equals(currentUser.getId())) {
+            return true;
+        }
+
+        if (targetUser.getRole() == Role.ADMIN) {
+            return false;
+        }
+
+        return visibleAccounts.stream()
+                .anyMatch(account -> account.getOwner().getId().equals(targetUser.getId()));
+    }
+
+    private boolean canShowSelectableUser(User currentUser, User targetUser) {
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+        if (currentUser.getRole() == Role.PARENT) {
+            return true;
+        }
+        return targetUser.getId().equals(currentUser.getId());
     }
 }
