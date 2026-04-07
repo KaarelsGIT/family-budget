@@ -12,6 +12,7 @@ public record CreateTransactionRequest(
         TransactionType type,
         Long fromAccountId,
         Long toAccountId,
+        Long targetUserId,
         Long categoryId,
         LocalDate transactionDate,
         @Size(max = 500) String comment

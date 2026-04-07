@@ -291,9 +291,6 @@ public class AccountService {
     }
 
     public void ensureCanAccessAccount(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
-        }
         if (hasVisibleAccess(currentUser, account)) {
             return;
         }
@@ -302,9 +299,6 @@ public class AccountService {
     }
 
     public boolean canManageAccount(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
         if (currentUser.getRole() == Role.CHILD) {
             return account.getOwner().getId().equals(currentUser.getId());
         }
@@ -312,37 +306,20 @@ public class AccountService {
     }
 
     public boolean canRenameAccount(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
         return account.getOwner().getId().equals(currentUser.getId());
     }
 
     public boolean canShareAccount(User currentUser, Account account) {
-        return currentUser.getRole() == Role.ADMIN || account.getOwner().getId().equals(currentUser.getId());
+        return account.getOwner().getId().equals(currentUser.getId());
     }
 
     public boolean canTransactFromAccount(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
         AccountUserRole accountRole = getAccountRole(currentUser, account);
         return accountRole == AccountUserRole.OWNER || accountRole == AccountUserRole.EDITOR;
     }
 
     public boolean canTransferToAccount(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
-        if (hasVisibleAccess(currentUser, account)) {
-            return true;
-        }
-
-        return currentUser.getRole() == Role.CHILD
-                && (account.getOwner().getRole() == Role.PARENT || account.getOwner().getRole() == Role.ADMIN);
+        return canUseAccount(currentUser, account);
     }
 
     private Specification<Account> visibleAccountSpecification(User currentUser) {
@@ -352,20 +329,9 @@ public class AccountService {
                 root.fetch("accountUsers", JoinType.LEFT).fetch("user", JoinType.LEFT);
                 query.distinct(true);
             }
-            if (currentUser.getRole() == Role.ADMIN) {
-                return cb.conjunction();
-            }
             var accountUserJoin = root.join("accountUsers", JoinType.LEFT);
-            if (currentUser.getRole() == Role.CHILD) {
-                return cb.or(
-                        cb.equal(root.get("owner").get("id"), currentUser.getId()),
-                        cb.equal(accountUserJoin.get("user").get("id"), currentUser.getId())
-                );
-            }
             return cb.or(
                     cb.equal(root.get("owner").get("id"), currentUser.getId()),
-                    cb.equal(root.get("owner").get("role"), Role.ADMIN),
-                    cb.equal(root.get("owner").get("role"), Role.CHILD),
                     cb.equal(accountUserJoin.get("user").get("id"), currentUser.getId())
             );
         };
@@ -417,10 +383,6 @@ public class AccountService {
     }
 
     private AccountUserRole getAccountRole(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return AccountUserRole.OWNER;
-        }
-
         if (account.getOwner().getId().equals(currentUser.getId())) {
             return AccountUserRole.OWNER;
         }
@@ -431,14 +393,6 @@ public class AccountService {
     }
 
     private Map<Long, AccountUserRole> loadAccessRoles(User currentUser, List<Account> accounts) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            Map<Long, AccountUserRole> accessRoles = new HashMap<>();
-            for (Account account : accounts) {
-                accessRoles.put(account.getId(), AccountUserRole.OWNER);
-            }
-            return accessRoles;
-        }
-
         Map<Long, AccountUserRole> accessRoles = new HashMap<>();
         for (AccountUser accountUser : accountUserRepository.findAllByUser(currentUser)) {
             accessRoles.put(accountUser.getAccount().getId(), accountUser.getRole());
@@ -454,19 +408,15 @@ public class AccountService {
     }
 
     private boolean hasVisibleAccess(User currentUser, Account account) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return true;
-        }
-
         if (account.getOwner().getId().equals(currentUser.getId())) {
             return true;
         }
 
-        if (currentUser.getRole() == Role.CHILD) {
-            return accountUserRepository.findByAccountAndUser(account, currentUser).isPresent();
-        }
+        return accountUserRepository.findByAccountAndUser(account, currentUser).isPresent();
+    }
 
-        if (account.getOwner().getRole() == Role.CHILD || account.getOwner().getRole() == Role.ADMIN) {
+    private boolean canUseAccount(User currentUser, Account account) {
+        if (account.getOwner().getId().equals(currentUser.getId())) {
             return true;
         }
 

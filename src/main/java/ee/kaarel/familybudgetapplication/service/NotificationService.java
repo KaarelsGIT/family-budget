@@ -151,11 +151,11 @@ public class NotificationService {
     }
 
     @Transactional
-    public void notifyMoneyReceived(User recipient, User sender, BigDecimal amount, String toAccountName) {
+    public void notifyMoneyReceived(User recipient, User sender, BigDecimal amount, String sourceAccountName) {
         createNotification(
                 recipient,
                 NotificationType.MONEY_RECEIVED,
-                localizeMoneyReceivedMessage(recipient, sender.getUsername(), amount, toAccountName)
+                localizeMoneyReceivedMessage(recipient, sender.getUsername(), amount, sourceAccountName)
         );
     }
 
@@ -309,13 +309,13 @@ public class NotificationService {
         );
     }
 
-    private String localizeMoneyReceivedMessage(User recipient, String senderUsername, BigDecimal amount, String toAccountName) {
+    private String localizeMoneyReceivedMessage(User recipient, String senderUsername, BigDecimal amount, String sourceAccountName) {
         String preferredLanguage = resolvePreferredLanguage(recipient);
         String formattedAmount = formatCurrency(preferredLanguage, amount);
         return switch (preferredLanguage) {
-            case "en" -> "You received " + formattedAmount + " from " + senderUsername + " to account " + toAccountName;
-            case "fi" -> "Sait " + formattedAmount + " kayttajalta " + senderUsername + " tilille " + toAccountName;
-            default -> "Said " + formattedAmount + " kasutajalt " + senderUsername + " kontole " + toAccountName;
+            case "en" -> "You received " + formattedAmount + " from " + senderUsername + " from account " + sourceAccountName;
+            case "fi" -> "Sait " + formattedAmount + " kayttajalta " + senderUsername + " tililta " + sourceAccountName;
+            default -> "Said " + formattedAmount + " kasutajalt " + senderUsername + " kontolt " + sourceAccountName;
         };
     }
 

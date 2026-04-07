@@ -52,6 +52,9 @@ class TransactionServiceTest {
     @Mock
     private RecurringPaymentService recurringPaymentService;
 
+    @Mock
+    private UserService userService;
+
     @InjectMocks
     private TransactionService transactionService;
 
@@ -68,7 +71,7 @@ class TransactionServiceTest {
 
         transactionService.update(
                 transaction.getId(),
-                new UpdateTransactionRequest(BigDecimal.valueOf(25), null, null, LocalDate.now(), "Updated comment")
+                new UpdateTransactionRequest(BigDecimal.valueOf(25), null, null, null, LocalDate.now(), "Updated comment")
         );
 
         verify(notificationService).notifySharedAccountTransactionUsers(
@@ -116,9 +119,10 @@ class TransactionServiceTest {
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
+        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of(toAccount));
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
-        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(true);
+        when(userService.findUser(recipient.getId())).thenReturn(recipient);
+        when(accountService.getTransferTargetMainAccount(recipient)).thenReturn(toAccount);
         when(accountService.getCalculatedBalance(fromAccount)).thenReturn(BigDecimal.valueOf(100));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -127,7 +131,8 @@ class TransactionServiceTest {
                 new UpdateTransactionRequest(
                         BigDecimal.valueOf(30),
                         fromAccount.getId(),
-                        toAccount.getId(),
+                        null,
+                        recipient.getId(),
                         LocalDate.now(),
                         "Updated transfer"
                 )
@@ -152,7 +157,7 @@ class TransactionServiceTest {
     }
 
     @Test
-    void createTransferUsesDestinationAccount() {
+    void createTransferUsesTargetUser() {
         User actor = createUser(1L, "John");
         User recipient = createUser(2L, "Jane");
         Account fromAccount = createAccount(10L, actor, "Source");
@@ -163,9 +168,10 @@ class TransactionServiceTest {
 
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
+        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of(toAccount));
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
-        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(true);
+        when(userService.findUser(recipient.getId())).thenReturn(recipient);
+        when(accountService.getTransferTargetMainAccount(recipient)).thenReturn(toAccount);
         when(accountService.getCalculatedBalance(fromAccount)).thenReturn(BigDecimal.valueOf(100));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -173,8 +179,8 @@ class TransactionServiceTest {
                 BigDecimal.valueOf(25),
                 TransactionType.TRANSFER,
                 fromAccount.getId(),
-                toAccount.getId(),
                 null,
+                recipient.getId(),
                 LocalDate.now(),
                 "Transfer to account"
         ));
@@ -192,27 +198,24 @@ class TransactionServiceTest {
     @Test
     void createTransferRejectsUnauthorizedTargetAccount() {
         User actor = createUser(1L, "John");
-        User recipient = createUser(2L, "Jane");
         User otherChild = createUser(3L, "Kid");
         otherChild.setRole(Role.CHILD);
         Account fromAccount = createAccount(10L, actor, "Source");
-        Account toAccount = createAccount(20L, otherChild, "Target");
         fromAccount.setType(AccountType.MAIN);
-        toAccount.setType(AccountType.MAIN);
 
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(accountService.getAccount(fromAccount.getId())).thenReturn(fromAccount);
-        when(accountService.getAccount(toAccount.getId())).thenReturn(toAccount);
+        when(accountService.getVisibleAccounts(actor)).thenReturn(java.util.List.of());
         when(accountService.canTransactFromAccount(actor, fromAccount)).thenReturn(true);
-        when(accountService.canTransferToAccount(actor, toAccount)).thenReturn(false);
+        when(userService.findUser(otherChild.getId())).thenReturn(otherChild);
 
         ApiException exception = assertThrows(ApiException.class, () -> transactionService.create(
                 new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
                         BigDecimal.valueOf(25),
                         TransactionType.TRANSFER,
                         fromAccount.getId(),
-                        toAccount.getId(),
                         null,
+                        otherChild.getId(),
                         LocalDate.now(),
                         "Transfer to account"
                 )

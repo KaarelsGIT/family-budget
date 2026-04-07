@@ -7,6 +7,8 @@ import static org.mockito.Mockito.when;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
+import ee.kaarel.familybudgetapplication.model.AccountUser;
+import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.Role;
@@ -19,6 +21,7 @@ import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import java.util.List;
 import java.math.BigDecimal;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -77,7 +80,7 @@ class AccountServiceTest {
     }
 
     @Test
-    void transferTargetsForChildIncludeOwnAndParentAdminAccounts() {
+    void transferTargetsForChildIncludeOwnAndSharedAccounts() {
         User child = createUser(1L, "child", Role.CHILD);
         User parent = createUser(2L, "parent", Role.PARENT);
         User admin = createUser(3L, "admin", Role.ADMIN);
@@ -85,9 +88,13 @@ class AccountServiceTest {
         Account childMain = createMainAccount(10L, child);
         Account parentMain = createMainAccount(20L, parent);
         Account adminMain = createMainAccount(30L, admin);
+        AccountUser parentShare = createAccountUser(parentMain, child, AccountUserRole.VIEWER);
+        AccountUser adminShare = createAccountUser(adminMain, child, AccountUserRole.EDITOR);
 
         when(currentUserService.getCurrentUser()).thenReturn(child);
         when(accountRepository.findAll(any(org.springframework.data.domain.Sort.class))).thenReturn(List.of(childMain, parentMain, adminMain));
+        when(accountUserRepository.findByAccountAndUser(parentMain, child)).thenReturn(Optional.of(parentShare));
+        when(accountUserRepository.findByAccountAndUser(adminMain, child)).thenReturn(Optional.of(adminShare));
         when(transactionRepository.calculateBalance(childMain)).thenReturn(BigDecimal.ZERO);
         when(transactionRepository.calculateBalance(parentMain)).thenReturn(BigDecimal.ZERO);
         when(transactionRepository.calculateBalance(adminMain)).thenReturn(BigDecimal.ZERO);
@@ -102,6 +109,14 @@ class AccountServiceTest {
         assertThat(targets.otherUsers())
                 .extracting(user -> user.username())
                 .containsExactly("admin", "parent");
+    }
+
+    private AccountUser createAccountUser(Account account, User user, AccountUserRole role) {
+        AccountUser accountUser = new AccountUser();
+        accountUser.setAccount(account);
+        accountUser.setUser(user);
+        accountUser.setRole(role);
+        return accountUser;
     }
 
     private User createUser(Long id, String username, Role role) {

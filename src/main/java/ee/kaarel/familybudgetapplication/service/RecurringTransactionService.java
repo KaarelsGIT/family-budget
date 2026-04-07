@@ -104,6 +104,7 @@ public class RecurringTransactionService {
                     TransactionType.INCOME,
                     null,
                     recurringTransaction.getAccount().getId(),
+                    null,
                     category.getId(),
                     reminder.getDueDate(),
                     recurringTransaction.getComment()
@@ -112,6 +113,7 @@ public class RecurringTransactionService {
                     recurringTransaction.getAmount(),
                     TransactionType.EXPENSE,
                     recurringTransaction.getAccount().getId(),
+                    null,
                     null,
                     category.getId(),
                     reminder.getDueDate(),

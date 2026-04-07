@@ -86,7 +86,7 @@ class UserServiceTest {
     }
 
     @Test
-    void transferTargetsForChildExcludeAdminButIncludeVisibleOwnersAndSelf() {
+    void transferTargetsForChildIncludeVisibleOwnersAndSelf() {
         User currentUser = createUser(1L, "child", Role.CHILD);
         User sharedOwner = createUser(2L, "parent", Role.PARENT);
         User adminOwner = createUser(3L, "admin", Role.ADMIN);
@@ -104,21 +104,46 @@ class UserServiceTest {
 
         List<UserResponse> users = userService.getTransferTargets();
 
-        assertEquals(2, users.size());
-        assertEquals(currentUser.getId(), users.get(0).id());
-        assertEquals(sharedOwner.getId(), users.get(1).id());
+        assertEquals(3, users.size());
+        assertEquals(adminOwner.getId(), users.get(0).id());
+        assertEquals(currentUser.getId(), users.get(1).id());
+        assertEquals(sharedOwner.getId(), users.get(2).id());
     }
 
     @Test
-    void transferTargetValidationRejectsAdminForChild() {
-        User currentUser = createUser(1L, "child", Role.CHILD);
+    void transferTargetsForParentIncludeVisibleChildAndAdmin() {
+        User currentUser = createUser(1L, "parent", Role.PARENT);
+        User childUser = createUser(2L, "child", Role.CHILD);
         User adminOwner = createUser(3L, "admin", Role.ADMIN);
+        User unrelated = createUser(4L, "other", Role.PARENT);
+
+        Account childAccount = createAccount(10L, childUser);
+        Account ownAccount = createAccount(11L, currentUser);
         Account adminAccount = createAccount(12L, adminOwner);
 
-        when(accountService.getVisibleAccounts(currentUser)).thenReturn(List.of(adminAccount));
+        when(currentUserService.getCurrentUser()).thenReturn(currentUser);
+        when(accountService.getVisibleAccounts(currentUser)).thenReturn(List.of(childAccount, ownAccount, adminAccount));
+        when(userRepository.findAll()).thenReturn(List.of(unrelated, adminOwner, childUser, currentUser));
+        when(accountRepository.findByOwnerAndTypeAndIsDefaultTrue(currentUser, AccountType.MAIN)).thenReturn(Optional.empty());
+        when(accountRepository.findByOwnerAndTypeAndIsDefaultTrue(childUser, AccountType.MAIN)).thenReturn(Optional.empty());
+
+        List<UserResponse> users = userService.getTransferTargets();
+
+        assertEquals(3, users.size());
+        assertEquals(adminOwner.getId(), users.get(0).id());
+        assertEquals(childUser.getId(), users.get(1).id());
+        assertEquals(currentUser.getId(), users.get(2).id());
+    }
+
+    @Test
+    void transferTargetValidationRejectsUnlinkedUserForChild() {
+        User currentUser = createUser(1L, "child", Role.CHILD);
+        User unrelated = createUser(3L, "other", Role.PARENT);
+
+        when(accountService.getVisibleAccounts(currentUser)).thenReturn(List.of());
 
         try {
-            userService.ensureTransferTargetAllowed(currentUser, adminOwner);
+            userService.ensureTransferTargetAllowed(currentUser, unrelated);
         } catch (Exception exception) {
             assertEquals("You cannot transfer money to this user", exception.getMessage());
             return;

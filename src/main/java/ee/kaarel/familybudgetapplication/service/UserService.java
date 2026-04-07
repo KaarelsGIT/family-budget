@@ -116,7 +116,7 @@ public class UserService {
         User currentUser = currentUserService.getCurrentUser();
         List<Account> visibleAccounts = accountService.getVisibleAccounts(currentUser);
         return userRepository.findAll().stream()
-                .filter(user -> canShowTransferTarget(currentUser, user, visibleAccounts))
+                .filter(user -> canTransferToUser(currentUser, user, visibleAccounts))
                 .sorted(Comparator.comparing(User::getUsername, String.CASE_INSENSITIVE_ORDER))
                 .map(this::toResponse)
                 .toList();
@@ -131,7 +131,7 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public void ensureTransferTargetAllowed(User currentUser, User targetUser) {
-        if (!canShowTransferTarget(currentUser, targetUser, accountService.getVisibleAccounts(currentUser))) {
+        if (!canTransferToUser(currentUser, targetUser, accountService.getVisibleAccounts(currentUser))) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot transfer money to this user");
         }
     }
@@ -237,25 +237,17 @@ public class UserService {
         return !targetUser.getId().equals(currentUser.getId());
     }
 
-    private boolean canTransferToUser(User currentUser, User targetUser) {
-        if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) {
-            return true;
-        }
-
-        return canShowTransferTarget(currentUser, targetUser, accountService.getVisibleAccounts(currentUser));
-    }
-
-    private boolean canShowTransferTarget(User currentUser, User targetUser, List<Account> visibleAccounts) {
-        if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) {
-            return true;
-        }
-
+    private boolean canTransferToUser(User currentUser, User targetUser, List<Account> visibleAccounts) {
         if (targetUser.getId().equals(currentUser.getId())) {
             return true;
         }
 
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+
         if (targetUser.getRole() == Role.ADMIN) {
-            return false;
+            return true;
         }
 
         return visibleAccounts.stream()

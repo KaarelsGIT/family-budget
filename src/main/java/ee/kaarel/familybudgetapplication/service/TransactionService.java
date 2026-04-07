@@ -37,6 +37,7 @@ public class TransactionService {
     private final CategoryService categoryService;
     private final NotificationService notificationService;
     private final RecurringPaymentService recurringPaymentService;
+    private final UserService userService;
 
     public TransactionService(
             TransactionRepository transactionRepository,
@@ -44,7 +45,8 @@ public class TransactionService {
             AccountService accountService,
             CategoryService categoryService,
             NotificationService notificationService,
-            RecurringPaymentService recurringPaymentService
+            RecurringPaymentService recurringPaymentService,
+            UserService userService
     ) {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
@@ -52,6 +54,7 @@ public class TransactionService {
         this.categoryService = categoryService;
         this.notificationService = notificationService;
         this.recurringPaymentService = recurringPaymentService;
+        this.userService = userService;
     }
 
     @Transactional(readOnly = true)
@@ -230,12 +233,12 @@ public class TransactionService {
     }
 
     private TransactionResponse createTransfer(User currentUser, CreateTransactionRequest request) {
-        if (request.fromAccountId() == null || request.toAccountId() == null || request.categoryId() != null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and toAccount, and category must be null");
+        if (request.fromAccountId() == null || request.categoryId() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and target user, and category must be null");
         }
         Account fromAccount = accountService.getAccount(request.fromAccountId());
-        Account toAccount = accountService.getAccount(request.toAccountId());
-        validateTransfer(currentUser, fromAccount, toAccount);
+        Account toAccount = resolveTransferTargetAccount(currentUser, request);
+        validateAccountModification(currentUser, fromAccount);
         if (fromAccount.getId().equals(toAccount.getId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
         }
@@ -255,14 +258,12 @@ public class TransactionService {
         notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
         notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
 
-        if (!fromAccount.getOwner().getId().equals(toAccount.getOwner().getId())) {
-            notificationService.notifyMoneyReceived(
-                    toAccount.getOwner(),
-                    fromAccount.getOwner(),
-                    request.amount(),
-                    toAccount.getName()
-            );
-        }
+        notificationService.notifyMoneyReceived(
+                resolveTransferTargetUser(currentUser, request),
+                fromAccount.getOwner(),
+                request.amount(),
+                fromAccount.getName()
+        );
         return toResponse(saved);
     }
 
@@ -315,8 +316,8 @@ public class TransactionService {
     }
 
     private TransactionResponse updateTransfer(User currentUser, Transaction transaction, UpdateTransactionRequest request) {
-        if (request.fromAccountId() == null || request.toAccountId() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and toAccount");
+        if (request.fromAccountId() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires fromAccount and target user");
         }
         if (request.amount() == null || request.amount().compareTo(BigDecimal.ZERO) <= 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction amount must be greater than zero");
@@ -326,9 +327,9 @@ public class TransactionService {
         }
 
         Account newFromAccount = accountService.getAccount(request.fromAccountId());
-        Account newToAccount = accountService.getAccount(request.toAccountId());
+        Account newToAccount = resolveTransferTargetAccount(currentUser, request);
         ensureTransferEditableByUser(currentUser, transaction, newFromAccount, newToAccount);
-        validateTransfer(currentUser, newFromAccount, newToAccount);
+        validateAccountModification(currentUser, newFromAccount);
         if (newFromAccount.getId().equals(newToAccount.getId())) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer accounts must differ");
         }
@@ -343,6 +344,12 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(transaction);
         notifySharedAccountTransactionIfNeeded(newFromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
         notifySharedAccountTransactionIfNeeded(newToAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        notificationService.notifyMoneyReceived(
+                resolveTransferTargetUser(currentUser, request),
+                newFromAccount.getOwner(),
+                request.amount(),
+                newFromAccount.getName()
+        );
         return toResponse(saved);
     }
 
@@ -363,10 +370,6 @@ public class TransactionService {
     }
 
     private void ensureTransferEditableByUser(User currentUser, Transaction transaction, Account newFromAccount, Account newToAccount) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
-        }
-
         if (transaction.getCreatedBy().getId().equals(currentUser.getId())) {
             return;
         }
@@ -376,6 +379,50 @@ public class TransactionService {
         if (!accountService.canTransactFromAccount(currentUser, newFromAccount)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot modify transactions for this account");
         }
+    }
+
+    private Account resolveTransferTargetAccount(User currentUser, CreateTransactionRequest request) {
+        User targetUser = resolveTransferTargetUser(currentUser, request);
+        return accountService.getTransferTargetMainAccount(targetUser);
+    }
+
+    private Account resolveTransferTargetAccount(User currentUser, UpdateTransactionRequest request) {
+        User targetUser = resolveTransferTargetUser(currentUser, request);
+        return accountService.getTransferTargetMainAccount(targetUser);
+    }
+
+    private User resolveTransferTargetUser(User currentUser, CreateTransactionRequest request) {
+        if (request.targetUserId() != null) {
+            User targetUser = userService.findUser(request.targetUserId());
+            userService.ensureTransferTargetAllowed(currentUser, targetUser);
+            return targetUser;
+        }
+
+        if (request.toAccountId() != null) {
+            Account targetAccount = accountService.getAccount(request.toAccountId());
+            User targetUser = targetAccount.getOwner();
+            userService.ensureTransferTargetAllowed(currentUser, targetUser);
+            return targetUser;
+        }
+
+        throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires target user");
+    }
+
+    private User resolveTransferTargetUser(User currentUser, UpdateTransactionRequest request) {
+        if (request.targetUserId() != null) {
+            User targetUser = userService.findUser(request.targetUserId());
+            userService.ensureTransferTargetAllowed(currentUser, targetUser);
+            return targetUser;
+        }
+
+        if (request.toAccountId() != null) {
+            Account targetAccount = accountService.getAccount(request.toAccountId());
+            User targetUser = targetAccount.getOwner();
+            userService.ensureTransferTargetAllowed(currentUser, targetUser);
+            return targetUser;
+        }
+
+        throw new ApiException(HttpStatus.BAD_REQUEST, "Transfer requires target user");
     }
 
     private void notifySharedAccountTransactionIfNeeded(Account account, TransactionType type, BigDecimal amount, Long transactionId, NotificationType notificationType) {
