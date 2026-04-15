@@ -8,6 +8,7 @@ import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.service.TransactionService;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,7 +33,9 @@ public class TransactionController {
 
     @GetMapping
     public ListResponse<?> getTransactions(
-            Pageable pageable,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String sort,
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long mainCategoryId,
@@ -41,7 +44,8 @@ public class TransactionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
     ) {
-        return transactionService.getTransactions(pageable, userId, categoryId, mainCategoryId, subCategoryId, type, from, to);
+        Pageable pageable = PageRequest.of(page, size);
+        return transactionService.getTransactions(pageable, sort, userId, categoryId, mainCategoryId, subCategoryId, type, from, to);
     }
 
     @PostMapping

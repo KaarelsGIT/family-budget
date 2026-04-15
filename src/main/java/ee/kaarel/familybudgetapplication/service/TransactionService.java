@@ -23,6 +23,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.YearMonth;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -65,6 +66,7 @@ public class TransactionService {
     @Transactional(readOnly = true)
     public ListResponse<TransactionResponse> getTransactions(
             Pageable pageable,
+            String sort,
             Long userId,
             Long categoryId,
             Long mainCategoryId,
@@ -75,12 +77,72 @@ public class TransactionService {
     ) {
         User currentUser = currentUserService.getCurrentUser();
         Long effectiveUserId = userId != null ? userId : currentUser.getId();
-        Pageable sorted = PageableUtils.withDefaultSort(pageable, Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
+        Sort parsedSort = parseSort(sort, pageable.getSort());
+        Pageable sorted = PageableUtils.withDefaultSort(pageable, parsedSort);
         Page<Transaction> page = transactionRepository.findAll(
                 visibleTransactions(currentUser, effectiveUserId, categoryId, mainCategoryId, subCategoryId, type, from, to),
                 sorted
         );
         return new ListResponse<>(page.map(this::toResponse).getContent(), page.getTotalElements());
+    }
+
+    private Sort parseSort(String sortParam, Sort incomingSort) {
+        List<Sort.Order> orders = new ArrayList<>();
+        if (sortParam != null && !sortParam.isBlank()) {
+            for (String token : sortParam.split(",")) {
+                String[] parts = token.trim().split(":");
+                String field = parts[0].trim();
+                String direction = parts.length > 1 ? parts[1].trim() : "asc";
+                Sort.Order safeOrder = toSafeOrder(field, direction);
+                if (safeOrder != null) {
+                    orders.add(safeOrder);
+                }
+            }
+        } else if (incomingSort != null && incomingSort.isSorted()) {
+            for (Sort.Order order : incomingSort) {
+                Sort.Order safeOrder = toSafeOrder(order.getProperty(), order.getDirection().name());
+                if (safeOrder != null) {
+                    orders.add(safeOrder);
+                }
+            }
+        }
+        if (orders.isEmpty()) {
+            orders.add(Sort.Order.desc("transactionDate"));
+            orders.add(Sort.Order.desc("id"));
+        } else if (orders.stream().noneMatch(order -> order.getProperty().equals("id"))) {
+            orders.add(Sort.Order.desc("id"));
+        }
+        return Sort.by(orders);
+    }
+
+    private Sort.Order toSafeOrder(String rawProperty, String rawDirection) {
+        String property = normalizeSortProperty(rawProperty);
+        if (property == null) {
+            return null;
+        }
+
+        Sort.Direction direction = "desc".equalsIgnoreCase(rawDirection) ? Sort.Direction.DESC : Sort.Direction.ASC;
+        Sort.Order safeOrder = new Sort.Order(direction, property);
+        if ("comment".equals(property)) {
+            safeOrder = safeOrder.ignoreCase();
+        }
+        if (!"id".equals(property)) {
+            safeOrder = safeOrder.nullsLast();
+        }
+        return safeOrder;
+    }
+
+    private String normalizeSortProperty(String property) {
+        return switch (property) {
+            case "transaction_date", "transactionDate" -> "transactionDate";
+            case "amount" -> "amount";
+            case "category", "category.name", "categoryName" -> "category.name";
+            case "account", "account.name" -> "fromAccount.name";
+            case "user", "user.username", "createdBy.username" -> "createdBy.username";
+            case "comment" -> "comment";
+            case "id" -> "id";
+            default -> null;
+        };
     }
 
     @Transactional
