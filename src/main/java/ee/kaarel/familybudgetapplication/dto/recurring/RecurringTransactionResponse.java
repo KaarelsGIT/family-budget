@@ -2,7 +2,7 @@ package ee.kaarel.familybudgetapplication.dto.recurring;
 
 import java.math.BigDecimal;
 
-public record RecurringPaymentResponse(
+public record RecurringTransactionResponse(
         Long id,
         String name,
         BigDecimal amount,
@@ -12,6 +12,6 @@ public record RecurringPaymentResponse(
         Long ownerId,
         String ownerUsername,
         boolean active,
-        RecurringPaymentStatusResponse currentMonthStatus
+        RecurringTransactionStatusResponse currentMonthStatus
 ) {
 }

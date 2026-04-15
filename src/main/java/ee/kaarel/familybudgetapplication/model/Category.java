@@ -42,12 +42,6 @@ public class Category {
     @JoinColumn(name = "parent_category_id")
     private Category parentCategory;
 
-    @Column(name = "is_recurring", nullable = false)
-    private boolean recurring = false;
-
-    @Column(name = "due_day_of_month")
-    private Integer dueDayOfMonth;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "category_group", nullable = false, length = 20)
     private CategoryGroup group;

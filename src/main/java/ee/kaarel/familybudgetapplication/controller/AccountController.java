@@ -6,6 +6,7 @@ import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
+import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
 import ee.kaarel.familybudgetapplication.service.AccountService;
 import ee.kaarel.familybudgetapplication.service.CurrentUserService;
 import jakarta.validation.Valid;
@@ -80,6 +81,12 @@ public class AccountController {
         logCurrentUser("DELETE /api/accounts/" + id);
         accountService.deleteAccount(id);
         return new ApiResponse<>("Account deletion processed");
+    }
+
+    @GetMapping("/transfer-targets")
+    public ApiResponse<TransferTargetsResponse> getTransferTargets() {
+        logCurrentUser("GET /api/accounts/transfer-targets");
+        return new ApiResponse<>(accountService.getTransferTargets());
     }
 
     private void logCurrentUser(String action) {

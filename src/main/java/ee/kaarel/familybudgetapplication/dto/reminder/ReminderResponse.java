@@ -8,6 +8,7 @@ import java.time.LocalDate;
 public record ReminderResponse(
         Long id,
         Long recurringTransactionId,
+        Long transactionId,
         Long userId,
         String username,
         Long categoryId,
@@ -18,6 +19,7 @@ public record ReminderResponse(
         String comment,
         LocalDate dueDate,
         ReminderStatus status,
-        TransactionType transactionType
+        TransactionType transactionType,
+        boolean urgent
 ) {
 }

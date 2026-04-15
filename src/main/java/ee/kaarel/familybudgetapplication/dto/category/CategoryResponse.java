@@ -12,8 +12,11 @@ public record CategoryResponse(
         Long parentCategoryId,
         String parentCategoryName,
         CategoryGroup group,
+        @Deprecated
         boolean isRecurring,
+        @Deprecated
         Integer dueDayOfMonth,
+        @Deprecated
         BigDecimal recurringAmount
 ) {
 }

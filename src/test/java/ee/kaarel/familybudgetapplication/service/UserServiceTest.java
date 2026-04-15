@@ -11,7 +11,6 @@ import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
-import ee.kaarel.familybudgetapplication.repository.RecurringPaymentRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import java.util.List;
@@ -35,9 +34,6 @@ class UserServiceTest {
 
     @Mock
     private TransactionRepository transactionRepository;
-
-    @Mock
-    private RecurringPaymentRepository recurringPaymentRepository;
 
     @Mock
     private NotificationRepository notificationRepository;

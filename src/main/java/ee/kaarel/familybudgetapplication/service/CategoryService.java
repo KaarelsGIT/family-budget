@@ -8,16 +8,13 @@ import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.CategoryGroup;
 import ee.kaarel.familybudgetapplication.model.Role;
-import ee.kaarel.familybudgetapplication.model.RecurringPayment;
+import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.CategoryRepository;
-import ee.kaarel.familybudgetapplication.repository.RecurringPaymentRepository;
+import ee.kaarel.familybudgetapplication.repository.RecurringTransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
-import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import jakarta.persistence.criteria.JoinType;
-import java.math.BigDecimal;
 import java.util.Locale;
-import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -25,28 +22,24 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ee.kaarel.familybudgetapplication.model.TransactionType;
 
 @Service
 public class CategoryService {
 
     private final CategoryRepository categoryRepository;
-    private final RecurringPaymentRepository recurringPaymentRepository;
-    private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final RecurringTransactionRepository recurringTransactionRepository;
     private final CurrentUserService currentUserService;
 
     public CategoryService(
             CategoryRepository categoryRepository,
-            RecurringPaymentRepository recurringPaymentRepository,
-            UserRepository userRepository,
             TransactionRepository transactionRepository,
+            RecurringTransactionRepository recurringTransactionRepository,
             CurrentUserService currentUserService
     ) {
         this.categoryRepository = categoryRepository;
-        this.recurringPaymentRepository = recurringPaymentRepository;
-        this.userRepository = userRepository;
         this.transactionRepository = transactionRepository;
+        this.recurringTransactionRepository = recurringTransactionRepository;
         this.currentUserService = currentUserService;
     }
 
@@ -62,7 +55,6 @@ public class CategoryService {
     @Transactional
     public CategoryResponse createCategory(CreateCategoryRequest request) {
         User currentUser = currentUserService.getCurrentUser();
-        validateGroupAccess(currentUser, request.group());
 
         Category category = new Category();
         apply(
@@ -71,13 +63,9 @@ public class CategoryService {
                 request.name(),
                 request.type(),
                 request.parentCategoryId(),
-                request.group(),
-                request.isRecurring(),
-                request.dueDayOfMonth(),
-                request.recurringAmount()
+                request.group()
         );
         Category saved = categoryRepository.save(category);
-        syncRecurringPayment(currentUser, saved, saved.isRecurring(), request.recurringAmount());
         return toResponse(saved);
     }
 
@@ -88,24 +76,12 @@ public class CategoryService {
         ensureVisible(currentUser, category);
 
         String name = request.name() != null ? request.name() : category.getName();
-        var type = request.type() != null ? request.type() : category.getType();
+        TransactionType type = request.type() != null ? request.type() : category.getType();
         Long parentId = request.parentCategoryId() != null ? request.parentCategoryId() : category.getParentCategory() == null ? null : category.getParentCategory().getId();
         CategoryGroup group = request.group() != null ? request.group() : category.getGroup();
-        Boolean isRecurring = request.isRecurring() != null ? request.isRecurring() : category.isRecurring();
-        Integer dueDayOfMonth;
-        if (request.isRecurring() != null && !request.isRecurring()) {
-            dueDayOfMonth = null;
-        } else if (request.isRecurring() != null && request.dueDayOfMonth() == null && category.isRecurring()) {
-            dueDayOfMonth = category.getDueDayOfMonth();
-        } else if (request.isRecurring() != null && request.isRecurring()) {
-            dueDayOfMonth = request.dueDayOfMonth() != null ? request.dueDayOfMonth() : category.getDueDayOfMonth();
-        } else {
-            dueDayOfMonth = request.dueDayOfMonth() != null ? request.dueDayOfMonth() : category.getDueDayOfMonth();
-        }
-        validateGroupAccess(currentUser, group);
-        apply(category, currentUser, name, type, parentId, group, isRecurring, dueDayOfMonth, request.recurringAmount());
+
+        apply(category, currentUser, name, type, parentId, group);
         Category saved = categoryRepository.save(category);
-        syncRecurringPayment(currentUser, saved, saved.isRecurring(), request.recurringAmount());
         return toResponse(saved);
     }
 
@@ -120,7 +96,9 @@ public class CategoryService {
         if (transactionRepository.existsByCategory(category)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot delete category with transactions");
         }
-        removeRecurringPayment(category);
+        if (recurringTransactionRepository.existsByCategory(category)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot delete category with recurring transactions");
+        }
         categoryRepository.delete(category);
     }
 
@@ -154,55 +132,41 @@ public class CategoryService {
             String name,
             TransactionType type,
             Long parentCategoryId,
-            CategoryGroup group,
-            Boolean isRecurring,
-            Integer dueDayOfMonth,
-            BigDecimal recurringAmount
+            CategoryGroup group
     ) {
         String normalizedName = normalizeName(name);
-        TransactionType resolvedType = type;
-        boolean recurring = Boolean.TRUE.equals(isRecurring);
-        Integer resolvedDueDayOfMonth = recurring ? dueDayOfMonth : null;
+        CategoryGroup effectiveGroup = group;
+        TransactionType effectiveType = type;
+        Category parentCategory = null;
 
-        validateCategoryShape(resolvedType, parentCategoryId, recurring, resolvedDueDayOfMonth);
+        if (parentCategoryId != null) {
+            parentCategory = getCategory(parentCategoryId);
+            ensureVisible(currentUser, parentCategory);
+            if (parentCategory.getId().equals(category.getId())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Category cannot be its own parent");
+            }
+            effectiveGroup = parentCategory.getGroup();
+            effectiveType = parentCategory.getType();
+        } else {
+            validateCategoryShape(effectiveType);
+            validateGroupAccess(currentUser, effectiveGroup);
+        }
+
         ensureUniqueCategory(currentUser, category.getId(), normalizedName, parentCategoryId);
 
         category.setUserId(currentUser.getId());
         category.setName(normalizedName);
-        category.setType(resolvedType);
-        category.setGroup(group);
-        category.setRecurring(recurring);
-        category.setDueDayOfMonth(resolvedDueDayOfMonth);
-        if (parentCategoryId == null) {
-            category.setParentCategory(null);
-            return;
-        }
-        Category parentCategory = getCategory(parentCategoryId);
-        if (parentCategory.getId().equals(category.getId())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Category cannot be its own parent");
-        }
-        if (parentCategory.getGroup() != group || parentCategory.getType() != resolvedType) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Parent category must have the same group and type");
-        }
+        category.setType(effectiveType);
+        category.setGroup(effectiveGroup);
         category.setParentCategory(parentCategory);
     }
 
-    private void validateCategoryShape(TransactionType type, Long parentCategoryId, boolean recurring, Integer dueDayOfMonth) {
+    private void validateCategoryShape(TransactionType type) {
         if (type == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Category type is required");
         }
         if (type == TransactionType.TRANSFER) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Category type must be INCOME or EXPENSE");
-        }
-        if (recurring) {
-            if (type != TransactionType.EXPENSE || parentCategoryId == null) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Only expense subcategories can be recurring");
-            }
-            if (dueDayOfMonth == null || dueDayOfMonth < 1 || dueDayOfMonth > 31) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "Recurring categories require dueDayOfMonth between 1 and 31");
-            }
-        } else if (dueDayOfMonth != null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "dueDayOfMonth is only allowed for recurring categories");
         }
     }
 
@@ -247,7 +211,6 @@ public class CategoryService {
     }
 
     public CategoryResponse toResponse(Category category) {
-        BigDecimal recurringAmount = resolveRecurringAmount(category);
         return new CategoryResponse(
                 category.getId(),
                 category.getUserId(),
@@ -256,54 +219,9 @@ public class CategoryService {
                 category.getParentCategory() == null ? null : category.getParentCategory().getId(),
                 category.getParentCategory() == null ? null : category.getParentCategory().getName(),
                 category.getGroup(),
-                category.isRecurring(),
-                category.getDueDayOfMonth(),
-                recurringAmount
+                false,
+                null,
+                null
         );
-    }
-
-    private void syncRecurringPayment(User currentUser, Category category, boolean recurring, BigDecimal recurringAmount) {
-        if (category.getType() != TransactionType.EXPENSE || !recurring || category.getParentCategory() == null) {
-            removeRecurringPayment(category);
-            return;
-        }
-
-        User owner = userRepository.findById(category.getUserId()).orElse(currentUser);
-        Optional<RecurringPayment> existing = recurringPaymentRepository.findByOwnerAndCategory(owner, category);
-        BigDecimal resolvedAmount = recurringAmount != null ? recurringAmount : existing.map(RecurringPayment::getAmount).orElse(null);
-        if (resolvedAmount == null || resolvedAmount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Recurring categories require a positive amount");
-        }
-
-        RecurringPayment recurringPayment = existing.orElseGet(RecurringPayment::new);
-        recurringPayment.setOwner(owner);
-        recurringPayment.setCategory(category);
-        recurringPayment.setName(category.getName());
-        recurringPayment.setAmount(resolvedAmount);
-        recurringPayment.setDueDay(category.getDueDayOfMonth());
-        recurringPayment.setActive(true);
-        recurringPaymentRepository.save(recurringPayment);
-    }
-
-    private void removeRecurringPayment(Category category) {
-        User owner = userRepository.findById(category.getUserId()).orElse(null);
-        if (owner == null) {
-            return;
-        }
-        recurringPaymentRepository.findByOwnerAndCategory(owner, category)
-                .ifPresent(recurringPaymentRepository::delete);
-    }
-
-    private BigDecimal resolveRecurringAmount(Category category) {
-        if (!category.isRecurring() || category.getParentCategory() == null || category.getType() != TransactionType.EXPENSE) {
-            return null;
-        }
-        User owner = userRepository.findById(category.getUserId()).orElse(null);
-        if (owner == null) {
-            return null;
-        }
-        return recurringPaymentRepository.findByOwnerAndCategory(owner, category)
-                .map(RecurringPayment::getAmount)
-                .orElse(null);
     }
 }

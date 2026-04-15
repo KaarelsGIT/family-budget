@@ -14,19 +14,25 @@ import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.CategoryGroup;
+import ee.kaarel.familybudgetapplication.model.ReminderStatus;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
+import ee.kaarel.familybudgetapplication.model.RecurringTransaction;
 import ee.kaarel.familybudgetapplication.model.Role;
+import ee.kaarel.familybudgetapplication.model.TransactionReminder;
 import ee.kaarel.familybudgetapplication.model.Transaction;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
+import ee.kaarel.familybudgetapplication.repository.TransactionReminderRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -51,10 +57,10 @@ class TransactionServiceTest {
     private NotificationService notificationService;
 
     @Mock
-    private RecurringPaymentService recurringPaymentService;
+    private UserService userService;
 
     @Mock
-    private UserService userService;
+    private TransactionReminderRepository transactionReminderRepository;
 
     @InjectMocks
     private TransactionService transactionService;
@@ -188,7 +194,8 @@ class TransactionServiceTest {
                 recipient.getId(),
                 null,
                 LocalDate.now(),
-                "Transfer to account"
+                "Transfer to account",
+                null
         ));
 
         verify(notificationService).notifySharedAccountTransactionUsers(
@@ -230,11 +237,102 @@ class TransactionServiceTest {
                         otherChild.getId(),
                         null,
                         LocalDate.now(),
-                        "Transfer to account"
+                        "Transfer to account",
+                        null
                 )
         ));
 
         assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
+    }
+
+    @Test
+    void createCompletesMatchingReminderForCurrentMonth() {
+        User actor = createUser(1L, "John", 100L);
+        Account account = createAccount(10L, actor, "Shared Account");
+        Category category = createCategory(20L, actor, "Utilities", TransactionType.EXPENSE);
+        LocalDate today = LocalDate.now();
+
+        RecurringTransaction recurringTransaction = new RecurringTransaction();
+        recurringTransaction.setId(30L);
+        recurringTransaction.setUser(actor);
+        recurringTransaction.setCategory(category);
+
+        TransactionReminder reminder = new TransactionReminder();
+        reminder.setId(40L);
+        reminder.setRecurringTransaction(recurringTransaction);
+        reminder.setUser(actor);
+        reminder.setDueDate(today.withDayOfMonth(1));
+        reminder.setStatus(ReminderStatus.PENDING);
+
+        when(currentUserService.getCurrentUser()).thenReturn(actor);
+        when(categoryService.getCategory(category.getId())).thenReturn(category);
+        when(accountService.getAccount(account.getId())).thenReturn(account);
+        when(accountService.canTransactFromAccount(actor, account)).thenReturn(true);
+        when(accountService.getCalculatedBalance(account)).thenReturn(BigDecimal.valueOf(100));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transactionReminderRepository.findAllByUserAndStatusOrderByDueDateAsc(actor, ReminderStatus.PENDING))
+                .thenReturn(List.of(reminder));
+        when(transactionReminderRepository.save(any(TransactionReminder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        transactionService.create(new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
+                BigDecimal.valueOf(25),
+                TransactionType.EXPENSE,
+                account.getId(),
+                null,
+                null,
+                category.getId(),
+                today,
+                "Utilities payment",
+                null
+        ));
+
+        ArgumentCaptor<TransactionReminder> reminderCaptor = ArgumentCaptor.forClass(TransactionReminder.class);
+        verify(transactionReminderRepository).save(reminderCaptor.capture());
+        assertEquals(ReminderStatus.COMPLETED, reminderCaptor.getValue().getStatus());
+    }
+
+    @Test
+    void createForUserCompletesExplicitReminder() {
+        User actor = createUser(1L, "John", 100L);
+        Account account = createAccount(10L, actor, "Shared Account");
+        Category category = createCategory(20L, actor, "Utilities", TransactionType.EXPENSE);
+        LocalDate today = LocalDate.now();
+        RecurringTransaction recurringTransaction = new RecurringTransaction();
+        recurringTransaction.setId(30L);
+        recurringTransaction.setUser(actor);
+        recurringTransaction.setCategory(category);
+
+        TransactionReminder reminder = new TransactionReminder();
+        reminder.setId(40L);
+        reminder.setRecurringTransaction(recurringTransaction);
+        reminder.setUser(actor);
+        reminder.setDueDate(today.withDayOfMonth(1));
+        reminder.setStatus(ReminderStatus.PENDING);
+
+        when(currentUserService.getCurrentUser()).thenReturn(actor);
+        when(categoryService.getCategory(category.getId())).thenReturn(category);
+        when(accountService.getAccount(account.getId())).thenReturn(account);
+        when(accountService.canTransactFromAccount(actor, account)).thenReturn(true);
+        when(accountService.getCalculatedBalance(account)).thenReturn(BigDecimal.valueOf(100));
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(transactionReminderRepository.findById(reminder.getId())).thenReturn(Optional.of(reminder));
+        when(transactionReminderRepository.save(any(TransactionReminder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        transactionService.createForUser(actor, new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
+                BigDecimal.valueOf(25),
+                TransactionType.EXPENSE,
+                account.getId(),
+                null,
+                null,
+                category.getId(),
+                today,
+                "Utilities payment",
+                reminder.getId()
+        ));
+
+        ArgumentCaptor<TransactionReminder> reminderCaptor = ArgumentCaptor.forClass(TransactionReminder.class);
+        verify(transactionReminderRepository).save(reminderCaptor.capture());
+        assertEquals(ReminderStatus.COMPLETED, reminderCaptor.getValue().getStatus());
     }
 
     @Test
@@ -286,6 +384,16 @@ class TransactionServiceTest {
         account.setOwner(owner);
         account.setName(name);
         return account;
+    }
+
+    private Category createCategory(Long id, User owner, String name, TransactionType type) {
+        Category category = new Category();
+        category.setId(id);
+        category.setUserId(owner.getId());
+        category.setName(name);
+        category.setType(type);
+        category.setGroup(CategoryGroup.FAMILY);
+        return category;
     }
 
     private Transaction createTransaction(Long id, User createdBy, Account account, TransactionType type, BigDecimal amount) {

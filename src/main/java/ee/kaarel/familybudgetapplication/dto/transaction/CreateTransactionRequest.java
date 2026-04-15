@@ -15,6 +15,7 @@ public record CreateTransactionRequest(
         Long targetUserId,
         Long categoryId,
         LocalDate transactionDate,
-        @Size(max = 500) String comment
+        @Size(max = 500) String comment,
+        Long reminderId
 ) {
 }

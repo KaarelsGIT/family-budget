@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
+import ee.kaarel.familybudgetapplication.dto.recurring.CreateRecurringTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.recurring.RecurringTransactionResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionResponse;
 import ee.kaarel.familybudgetapplication.model.Account;
@@ -21,6 +23,7 @@ import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.RecurringTransactionRepository;
+import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionReminderRepository;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -48,6 +51,9 @@ class RecurringTransactionServiceTest {
     private TransactionReminderRepository transactionReminderRepository;
 
     @Mock
+    private TransactionRepository transactionRepository;
+
+    @Mock
     private CurrentUserService currentUserService;
 
     @Mock
@@ -55,6 +61,12 @@ class RecurringTransactionServiceTest {
 
     @Mock
     private NotificationService notificationService;
+
+    @Mock
+    private AccountService accountService;
+
+    @Mock
+    private CategoryService categoryService;
 
     @InjectMocks
     private RecurringTransactionService recurringTransactionService;
@@ -93,10 +105,11 @@ class RecurringTransactionServiceTest {
         assertThat(savedReminder.getDueDate()).isEqualTo(today);
         assertThat(savedReminder.getStatus()).isEqualTo(ReminderStatus.PENDING);
 
-        verify(notificationService).notifyRecurringPaymentDue(owner, recurringTransaction, savedReminder);
+        verify(notificationService).notifyRecurringTransactionDue(owner, recurringTransaction, savedReminder);
 
-        LocalDate expectedNextDueDate = YearMonth.from(today).plusMonths(1).atDay(
-                Math.min(recurringTransaction.getDueDayOfMonth(), YearMonth.from(today).plusMonths(1).lengthOfMonth())
+        LocalDate expectedNextDueDate = recurringTransactionService.calculateNextDueDate(
+                today.plusDays(1),
+                recurringTransaction.getDueDayOfMonth()
         );
         assertThat(recurringTransaction.getNextDueDate()).isEqualTo(expectedNextDueDate);
     }
@@ -127,6 +140,57 @@ class RecurringTransactionServiceTest {
         assertThat(response.data()).hasSize(1);
 
         verify(transactionReminderRepository).findAllByUserAndStatusOrderByDueDateAsc(owner, ReminderStatus.PENDING);
+    }
+
+    @Test
+    void createRecurringTransactionStoresCommentAndNextDueDate() {
+        LocalDate today = LocalDate.now(TALLINN);
+        User owner = createUser(1L, "Kaarel", Role.PARENT);
+        Category category = createCategory(10L, owner, "Salary", TransactionType.INCOME);
+
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(categoryService.getCategory(category.getId())).thenReturn(category);
+        when(recurringTransactionRepository.save(any(RecurringTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecurringTransactionResponse response = recurringTransactionService.create(
+                new CreateRecurringTransactionRequest("Monthly salary", category.getId(), BigDecimal.valueOf(1000), 15, true, null)
+        );
+
+        assertThat(response.name()).isEqualTo("Monthly salary");
+        assertThat(response.amount()).isEqualTo(BigDecimal.valueOf(1000));
+        assertThat(response.dueDay()).isEqualTo(15);
+        assertThat(response.ownerId()).isEqualTo(owner.getId());
+        assertThat(response.active()).isTrue();
+        assertThat(response.currentMonthStatus()).isNotNull();
+        assertThat(response.currentMonthStatus().year()).isEqualTo(today.getYear());
+    }
+
+    @Test
+    void createRecurringTransactionAllowsMultipleRulesForSameCategory() {
+        User owner = createUser(1L, "Kaarel", Role.PARENT);
+        Category category = createCategory(10L, owner, "Internet", TransactionType.EXPENSE);
+
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(categoryService.getCategory(category.getId())).thenReturn(category);
+        when(recurringTransactionRepository.save(any(RecurringTransaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        RecurringTransactionResponse first = recurringTransactionService.create(
+                new CreateRecurringTransactionRequest("Telia Internet", category.getId(), BigDecimal.valueOf(25), 10, true, null)
+        );
+        RecurringTransactionResponse second = recurringTransactionService.create(
+                new CreateRecurringTransactionRequest("Telia Mobile", category.getId(), BigDecimal.valueOf(15), 12, true, null)
+        );
+
+        ArgumentCaptor<RecurringTransaction> captor = ArgumentCaptor.forClass(RecurringTransaction.class);
+        verify(recurringTransactionRepository, times(2)).save(captor.capture());
+
+        List<RecurringTransaction> savedTransactions = captor.getAllValues();
+        assertThat(savedTransactions).hasSize(2);
+        assertThat(savedTransactions.get(0)).isNotSameAs(savedTransactions.get(1));
+        assertThat(savedTransactions.get(0).getComment()).isEqualTo("Telia Internet");
+        assertThat(savedTransactions.get(1).getComment()).isEqualTo("Telia Mobile");
+        assertThat(first.name()).isEqualTo("Telia Internet");
+        assertThat(second.name()).isEqualTo("Telia Mobile");
     }
 
     @Test
@@ -181,6 +245,59 @@ class RecurringTransactionServiceTest {
         assertThat(request.fromAccountId()).isNull();
         assertThat(request.transactionDate()).isEqualTo(today);
         assertThat(request.comment()).isEqualTo("Monthly salary");
+        assertThat(result).isSameAs(transactionResponse);
+        assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.COMPLETED);
+    }
+
+    @Test
+    void completeReminderFallsBackToDefaultAccountWhenRecurringAccountIsMissing() {
+        LocalDate today = LocalDate.now(TALLINN);
+        User owner = createUser(1L, "Kaarel", Role.PARENT);
+        Category category = createCategory(10L, owner, "Utility", TransactionType.EXPENSE);
+        Account defaultAccount = createAccount(20L, owner, "Main");
+        RecurringTransaction recurringTransaction = createRecurringTransaction(
+                30L,
+                owner,
+                category,
+                null,
+                BigDecimal.valueOf(42.50),
+                "Electricity",
+                2,
+                today
+        );
+        TransactionReminder reminder = createReminder(40L, recurringTransaction, owner, today, ReminderStatus.PENDING);
+        TransactionResponse transactionResponse = new TransactionResponse(
+                99L,
+                BigDecimal.valueOf(42.50),
+                null,
+                TransactionType.EXPENSE,
+                defaultAccount.getId(),
+                defaultAccount.getName(),
+                null,
+                null,
+                category.getId(),
+                category.getName(),
+                owner.getId(),
+                owner.getUsername(),
+                today,
+                OffsetDateTime.now(),
+                "Electricity"
+        );
+
+        when(currentUserService.getCurrentUser()).thenReturn(owner);
+        when(transactionReminderRepository.findById(reminder.getId())).thenReturn(Optional.of(reminder));
+        when(accountService.getDefaultMainAccount(owner)).thenReturn(defaultAccount);
+        when(transactionService.createForUser(eq(owner), any(CreateTransactionRequest.class))).thenReturn(transactionResponse);
+        when(transactionReminderRepository.save(any(TransactionReminder.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TransactionResponse result = recurringTransactionService.completeReminder(reminder.getId());
+
+        ArgumentCaptor<CreateTransactionRequest> requestCaptor = ArgumentCaptor.forClass(CreateTransactionRequest.class);
+        verify(transactionService).createForUser(eq(owner), requestCaptor.capture());
+
+        CreateTransactionRequest request = requestCaptor.getValue();
+        assertThat(request.fromAccountId()).isEqualTo(defaultAccount.getId());
+        assertThat(request.toAccountId()).isNull();
         assertThat(result).isSameAs(transactionResponse);
         assertThat(reminder.getStatus()).isEqualTo(ReminderStatus.COMPLETED);
     }

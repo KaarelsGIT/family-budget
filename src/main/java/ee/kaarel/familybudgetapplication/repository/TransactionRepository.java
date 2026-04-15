@@ -3,9 +3,11 @@ package ee.kaarel.familybudgetapplication.repository;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.Transaction;
+import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsRow;
 import ee.kaarel.familybudgetapplication.model.User;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -141,5 +143,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             @Param("year") int year,
             @Param("month") int month,
             @Param("createdAfter") OffsetDateTime createdAfter
+    );
+
+    List<Transaction> findAllByCreatedByAndCategoryAndTypeAndTransactionDateBetween(
+            User createdBy,
+            Category category,
+            TransactionType type,
+            LocalDate from,
+            LocalDate to
     );
 }

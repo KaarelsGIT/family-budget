@@ -40,7 +40,7 @@ public class RecurringTransaction {
     @JoinColumn(name = "account_id")
     private Account account;
 
-    @Column(precision = 19, scale = 2)
+    @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
     @Column(length = 500)
@@ -52,7 +52,7 @@ public class RecurringTransaction {
     @Column(name = "next_due_date", nullable = false)
     private LocalDate nextDueDate;
 
-    @Column(name = "is_active", nullable = false)
+    @Column(nullable = false)
     private boolean active = true;
 
     @OneToMany(mappedBy = "recurringTransaction", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)

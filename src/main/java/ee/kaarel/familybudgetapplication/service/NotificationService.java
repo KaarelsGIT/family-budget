@@ -292,8 +292,8 @@ public class NotificationService {
     }
 
     @Transactional
-    public void notifyRecurringPaymentDue(User recipient, RecurringTransaction recurringTransaction, TransactionReminder reminder) {
-        String message = localizeRecurringPaymentDueMessage(
+    public void notifyRecurringTransactionDue(User recipient, RecurringTransaction recurringTransaction, TransactionReminder reminder) {
+        String message = localizeRecurringTransactionDueMessage(
                 recipient,
                 recurringTransaction.getCategory().getName(),
                 recurringTransaction.getAmount(),
@@ -319,7 +319,7 @@ public class NotificationService {
         };
     }
 
-    private String localizeRecurringPaymentDueMessage(User recipient, String categoryName, BigDecimal amount, java.time.LocalDate dueDate) {
+    private String localizeRecurringTransactionDueMessage(User recipient, String categoryName, BigDecimal amount, java.time.LocalDate dueDate) {
         String preferredLanguage = resolvePreferredLanguage(recipient);
         String formattedAmount = amount == null ? null : formatCurrency(preferredLanguage, amount);
         String dueDateText = dueDate.toString();

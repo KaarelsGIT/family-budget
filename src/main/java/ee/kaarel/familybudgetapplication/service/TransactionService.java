@@ -9,16 +9,21 @@ import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountType;
 import ee.kaarel.familybudgetapplication.model.Category;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
+import ee.kaarel.familybudgetapplication.model.ReminderStatus;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.Transaction;
+import ee.kaarel.familybudgetapplication.model.TransactionReminder;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
+import ee.kaarel.familybudgetapplication.repository.TransactionReminderRepository;
 import jakarta.persistence.criteria.JoinType;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.YearMonth;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,8 +41,8 @@ public class TransactionService {
     private final AccountService accountService;
     private final CategoryService categoryService;
     private final NotificationService notificationService;
-    private final RecurringPaymentService recurringPaymentService;
     private final UserService userService;
+    private final TransactionReminderRepository transactionReminderRepository;
 
     public TransactionService(
             TransactionRepository transactionRepository,
@@ -45,16 +50,16 @@ public class TransactionService {
             AccountService accountService,
             CategoryService categoryService,
             NotificationService notificationService,
-            RecurringPaymentService recurringPaymentService,
-            UserService userService
+            UserService userService,
+            TransactionReminderRepository transactionReminderRepository
     ) {
         this.transactionRepository = transactionRepository;
         this.currentUserService = currentUserService;
         this.accountService = accountService;
         this.categoryService = categoryService;
         this.notificationService = notificationService;
-        this.recurringPaymentService = recurringPaymentService;
         this.userService = userService;
+        this.transactionReminderRepository = transactionReminderRepository;
     }
 
     @Transactional(readOnly = true)
@@ -193,13 +198,8 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
+        completeMatchingReminderIfPresent(saved, request.reminderId());
         notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.INCOME, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
-        recurringPaymentService.markRecurringAsPaidByTransaction(
-                category,
-                toAccount.getOwner(),
-                saved.getTransactionDate().getYear(),
-                saved.getTransactionDate().getMonthValue()
-        );
         return toResponse(saved);
     }
 
@@ -222,13 +222,8 @@ public class TransactionService {
         transaction.setCreatedAt(OffsetDateTime.now());
         transaction.setComment(request.comment());
         Transaction saved = transactionRepository.save(transaction);
+        completeMatchingReminderIfPresent(saved, request.reminderId());
         notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.EXPENSE, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
-        recurringPaymentService.markRecurringAsPaidByTransaction(
-                category,
-                fromAccount.getOwner(),
-                saved.getTransactionDate().getYear(),
-                saved.getTransactionDate().getMonthValue()
-        );
         return toResponse(saved);
     }
 
@@ -430,6 +425,37 @@ public class TransactionService {
 
     private Account getTransactionAccount(Transaction transaction) {
         return transaction.getType() == TransactionType.INCOME ? transaction.getToAccount() : transaction.getFromAccount();
+    }
+
+    private void completeMatchingReminderIfPresent(Transaction transaction, Long reminderId) {
+        if (transaction.getCategory() == null || transaction.getTransactionDate() == null || transaction.getCreatedBy() == null) {
+            return;
+        }
+
+        if (reminderId != null) {
+            transactionReminderRepository.findById(reminderId)
+                    .filter(reminder -> reminder.getStatus() == ReminderStatus.PENDING)
+                    .ifPresent(reminder -> completeReminderLink(transaction, reminder));
+            return;
+        }
+
+        YearMonth transactionMonth = YearMonth.from(transaction.getTransactionDate());
+        List<TransactionReminder> pendingReminders = transactionReminderRepository.findAllByUserAndStatusOrderByDueDateAsc(
+                transaction.getCreatedBy(),
+                ReminderStatus.PENDING
+        );
+
+        pendingReminders.stream()
+                .filter(reminder -> reminder.getRecurringTransaction().getCategory().getId().equals(transaction.getCategory().getId()))
+                .filter(reminder -> YearMonth.from(reminder.getDueDate()).equals(transactionMonth))
+                .findFirst()
+                .ifPresent(reminder -> completeReminderLink(transaction, reminder));
+    }
+
+    private void completeReminderLink(Transaction transaction, TransactionReminder reminder) {
+        reminder.setStatus(ReminderStatus.COMPLETED);
+        reminder.setTransaction(transaction);
+        transactionReminderRepository.save(reminder);
     }
 
     @Transactional(readOnly = true)

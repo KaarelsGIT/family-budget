@@ -12,7 +12,6 @@ import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
-import ee.kaarel.familybudgetapplication.repository.RecurringPaymentRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import java.util.Comparator;
@@ -33,7 +32,6 @@ public class UserService {
     private final UserRepository userRepository;
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
-    private final RecurringPaymentRepository recurringPaymentRepository;
     private final NotificationRepository notificationRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
@@ -43,7 +41,6 @@ public class UserService {
             UserRepository userRepository,
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
-            RecurringPaymentRepository recurringPaymentRepository,
             NotificationRepository notificationRepository,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService,
@@ -52,7 +49,6 @@ public class UserService {
         this.userRepository = userRepository;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
-        this.recurringPaymentRepository = recurringPaymentRepository;
         this.notificationRepository = notificationRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
@@ -210,7 +206,6 @@ public class UserService {
         }
 
         transactionRepository.deleteAllLinkedToUser(targetUser);
-        recurringPaymentRepository.deleteAllByOwner(targetUser);
         notificationRepository.deleteAllByUser(targetUser);
         accountRepository.deleteAllByOwner(targetUser);
         userRepository.delete(targetUser);

@@ -314,6 +314,10 @@ public class AccountService {
     }
 
     public boolean canTransactFromAccount(User currentUser, Account account) {
+        if (canAccessFamilyAccount(currentUser, account)) {
+            return true;
+        }
+
         AccountUserRole accountRole = getAccountRole(currentUser, account);
         return accountRole == AccountUserRole.OWNER || accountRole == AccountUserRole.EDITOR;
     }
@@ -330,10 +334,19 @@ public class AccountService {
                 query.distinct(true);
             }
             var accountUserJoin = root.join("accountUsers", JoinType.LEFT);
-            return cb.or(
+            var ownedOrShared = cb.or(
                     cb.equal(root.get("owner").get("id"), currentUser.getId()),
                     cb.equal(accountUserJoin.get("user").get("id"), currentUser.getId())
             );
+
+            if ((currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) && currentUser.getFamilyId() != null) {
+                return cb.or(
+                        ownedOrShared,
+                        cb.equal(root.get("owner").get("familyId"), currentUser.getFamilyId())
+                );
+            }
+
+            return ownedOrShared;
         };
     }
 
@@ -412,6 +425,10 @@ public class AccountService {
             return true;
         }
 
+        if (canAccessFamilyAccount(currentUser, account)) {
+            return true;
+        }
+
         return accountUserRepository.findByAccountAndUser(account, currentUser).isPresent();
     }
 
@@ -420,7 +437,23 @@ public class AccountService {
             return true;
         }
 
+        if (canAccessFamilyAccount(currentUser, account)) {
+            return true;
+        }
+
         return accountUserRepository.findByAccountAndUser(account, currentUser).isPresent();
+    }
+
+    private boolean canAccessFamilyAccount(User currentUser, Account account) {
+        if (currentUser.getFamilyId() == null) {
+            return false;
+        }
+
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.PARENT) {
+            return false;
+        }
+
+        return currentUser.getFamilyId().equals(account.getOwner().getFamilyId());
     }
 
     private boolean canShareWithUser(User currentUser, User targetUser) {
