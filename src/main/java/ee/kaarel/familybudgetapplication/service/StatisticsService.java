@@ -103,7 +103,7 @@ public class StatisticsService {
                     monthly.get(month).income = monthly.get(month).income.add(amount);
                 }
                 addAccountIncome(accounts, row.toAccountId(), row.toAccountName(), amount);
-                if (row.toAccountType() == AccountType.SAVINGS) {
+                if (isSavingsAccountType(row.toAccountType())) {
                     savings = savings.add(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.add(amount);
@@ -119,7 +119,7 @@ public class StatisticsService {
                     monthly.get(month).expenses = monthly.get(month).expenses.add(amount);
                 }
                 addAccountExpense(accounts, row.fromAccountId(), row.fromAccountName(), amount);
-                if (row.fromAccountType() == AccountType.SAVINGS) {
+                if (isSavingsAccountType(row.fromAccountType())) {
                     savings = savings.subtract(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
@@ -139,13 +139,13 @@ public class StatisticsService {
                 }
                 addAccountTransfer(accounts, row.fromAccountId(), row.fromAccountName(), amount, false);
                 addAccountTransfer(accounts, row.toAccountId(), row.toAccountName(), amount, true);
-                if (row.fromAccountType() == AccountType.SAVINGS) {
+                if (isSavingsAccountType(row.fromAccountType())) {
                     savings = savings.subtract(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
                     }
                 }
-                if (row.toAccountType() == AccountType.SAVINGS) {
+                if (isSavingsAccountType(row.toAccountType())) {
                     savings = savings.add(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.add(amount);
@@ -315,6 +315,10 @@ public class StatisticsService {
 
     private BigDecimal normalize(BigDecimal value) {
         return value == null ? BigDecimal.ZERO : value;
+    }
+
+    private boolean isSavingsAccountType(AccountType accountType) {
+        return accountType == AccountType.SAVINGS || accountType == AccountType.GOAL;
     }
 
     private static final class MonthlyAccumulator {
