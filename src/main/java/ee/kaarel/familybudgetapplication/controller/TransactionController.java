@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.controller;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.transaction.TransactionListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import ee.kaarel.familybudgetapplication.service.TransactionService;
@@ -32,7 +33,7 @@ public class TransactionController {
     }
 
     @GetMapping
-    public ListResponse<?> getTransactions(
+    public TransactionListResponse getTransactions(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String sort,

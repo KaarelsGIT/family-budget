@@ -89,7 +89,7 @@ public class StatisticsService {
 
         BigDecimal income = BigDecimal.ZERO;
         BigDecimal expenses = BigDecimal.ZERO;
-        BigDecimal savings = BigDecimal.ZERO;
+        BigDecimal savingsTotal = BigDecimal.ZERO;
         BigDecimal transfersTotalAmount = BigDecimal.ZERO;
         long transfersCount = 0L;
 
@@ -103,12 +103,6 @@ public class StatisticsService {
                     monthly.get(month).income = monthly.get(month).income.add(amount);
                 }
                 addAccountIncome(accounts, row.toAccountId(), row.toAccountName(), amount);
-                if (isSavingsAccountType(row.toAccountType())) {
-                    savings = savings.add(amount);
-                    if (month >= 1 && month <= 12) {
-                        monthly.get(month).savings = monthly.get(month).savings.add(amount);
-                    }
-                }
                 accumulateCategory(incomeCategories, row, amount, month);
                 continue;
             }
@@ -119,12 +113,6 @@ public class StatisticsService {
                     monthly.get(month).expenses = monthly.get(month).expenses.add(amount);
                 }
                 addAccountExpense(accounts, row.fromAccountId(), row.fromAccountName(), amount);
-                if (isSavingsAccountType(row.fromAccountType())) {
-                    savings = savings.subtract(amount);
-                    if (month >= 1 && month <= 12) {
-                        monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
-                    }
-                }
                 accumulateCategory(expenseCategories, row, amount, month);
                 continue;
             }
@@ -137,20 +125,16 @@ public class StatisticsService {
                     transferMonth.totalAmount = transferMonth.totalAmount.add(amount);
                     transferMonth.count += row.transactionCount() == null ? 0L : row.transactionCount();
                 }
-                addAccountTransfer(accounts, row.fromAccountId(), row.fromAccountName(), amount, false);
-                addAccountTransfer(accounts, row.toAccountId(), row.toAccountName(), amount, true);
-                if (isSavingsAccountType(row.fromAccountType())) {
-                    savings = savings.subtract(amount);
-                    if (month >= 1 && month <= 12) {
-                        monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
-                    }
-                }
+
                 if (isSavingsAccountType(row.toAccountType())) {
-                    savings = savings.add(amount);
+                    savingsTotal = savingsTotal.add(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.add(amount);
                     }
                 }
+
+                addAccountTransfer(accounts, row.fromAccountId(), row.fromAccountName(), amount, false);
+                addAccountTransfer(accounts, row.toAccountId(), row.toAccountName(), amount, true);
             }
         }
 
@@ -196,8 +180,8 @@ public class StatisticsService {
                         income,
                         expenses,
                         net,
-                        savings,
-                        calculateRate(savings, income)
+                        savingsTotal,
+                        calculateRate(savingsTotal, income)
                 ),
                 monthlyEntries,
                 new YearlyStatisticsResponse.Categories(incomeCategoryEntries, expenseCategoryEntries),
@@ -318,7 +302,7 @@ public class StatisticsService {
     }
 
     private boolean isSavingsAccountType(AccountType accountType) {
-        return accountType == AccountType.SAVINGS || accountType == AccountType.GOAL;
+        return accountType == AccountType.SAVINGS;
     }
 
     private static final class MonthlyAccumulator {

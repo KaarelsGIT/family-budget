@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.service;
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.transaction.TransactionListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
 import ee.kaarel.familybudgetapplication.model.Account;
@@ -64,7 +65,7 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public ListResponse<TransactionResponse> getTransactions(
+    public TransactionListResponse getTransactions(
             Pageable pageable,
             String sort,
             Long userId,
@@ -79,11 +80,40 @@ public class TransactionService {
         Long effectiveUserId = userId != null ? userId : currentUser.getId();
         Sort parsedSort = parseSort(sort, pageable.getSort());
         Pageable sorted = PageableUtils.withDefaultSort(pageable, parsedSort);
-        Page<Transaction> page = transactionRepository.findAll(
-                visibleTransactions(currentUser, effectiveUserId, categoryId, mainCategoryId, subCategoryId, type, from, to),
-                sorted
+        
+        Specification<Transaction> spec = visibleTransactions(currentUser, effectiveUserId, categoryId, mainCategoryId, subCategoryId, type, from, to);
+        
+        Page<Transaction> page = transactionRepository.findAll(spec, sorted);
+
+        BigDecimal totalIncome = BigDecimal.ZERO;
+        BigDecimal totalExpenses = BigDecimal.ZERO;
+        BigDecimal totalTransfers = BigDecimal.ZERO;
+
+        if (type == null || type == TransactionType.INCOME) {
+            totalIncome = calculateTotal(spec, TransactionType.INCOME);
+        }
+        if (type == null || type == TransactionType.EXPENSE) {
+            totalExpenses = calculateTotal(spec, TransactionType.EXPENSE);
+        }
+        if (type == null || type == TransactionType.TRANSFER) {
+            totalTransfers = calculateTotal(spec, TransactionType.TRANSFER);
+        }
+
+        return new TransactionListResponse(
+                page.map(this::toResponse).getContent(),
+                page.getTotalElements(),
+                totalIncome,
+                totalExpenses,
+                totalTransfers
         );
-        return new ListResponse<>(page.map(this::toResponse).getContent(), page.getTotalElements());
+    }
+
+    private BigDecimal calculateTotal(Specification<Transaction> spec, TransactionType type) {
+        Specification<Transaction> typeSpec = (root, query, cb) -> cb.equal(root.get("type"), type);
+        return transactionRepository.findAll(Specification.where(spec).and(typeSpec))
+                .stream()
+                .map(Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private Sort parseSort(String sortParam, Sort incomingSort) {
