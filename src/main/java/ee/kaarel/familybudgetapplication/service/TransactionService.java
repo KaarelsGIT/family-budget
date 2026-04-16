@@ -135,7 +135,9 @@ public class TransactionService {
     private String normalizeSortProperty(String property) {
         return switch (property) {
             case "transaction_date", "transactionDate" -> "transactionDate";
+            case "created_at", "createdAt" -> "createdAt";
             case "amount" -> "amount";
+            case "type" -> "type";
             case "category", "category.name", "categoryName" -> "category.name";
             case "account", "account.name" -> "fromAccount.name";
             case "user", "user.username", "createdBy.username" -> "createdBy.username";
