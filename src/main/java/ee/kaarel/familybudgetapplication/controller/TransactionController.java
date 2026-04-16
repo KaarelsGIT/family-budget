@@ -39,7 +39,7 @@ public class TransactionController {
             @RequestParam(required = false) Long userId,
             @RequestParam(required = false) Long categoryId,
             @RequestParam(required = false) Long mainCategoryId,
-            @RequestParam(required = false) Long subCategoryId,
+            @RequestParam(name = "subcategoryId", required = false) Long subCategoryId,
             @RequestParam(required = false) TransactionType type,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to
