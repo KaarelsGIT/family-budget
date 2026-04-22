@@ -4,6 +4,7 @@ import ee.kaarel.familybudgetapplication.model.Notification;
 import ee.kaarel.familybudgetapplication.model.NotificationType;
 import ee.kaarel.familybudgetapplication.model.User;
 import java.util.List;
+import java.util.Optional;
 import java.time.OffsetDateTime;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -24,6 +25,32 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
     boolean existsByUserAndTypeAndRelatedTransactionId(User user, NotificationType type, Long relatedTransactionId);
 
     boolean existsByUserAndTypeAndRelatedTransactionIdAndRelatedAccountId(
+            User user,
+            NotificationType type,
+            Long relatedTransactionId,
+            Long relatedAccountId
+    );
+
+    Optional<Notification> findFirstByUserAndTypeAndRelatedTransactionIdOrderByCreatedAtDesc(
+            User user,
+            NotificationType type,
+            Long relatedTransactionId
+    );
+
+    Optional<Notification> findFirstByUserAndTypeAndRelatedTransactionIdAndRelatedAccountIdOrderByCreatedAtDesc(
+            User user,
+            NotificationType type,
+            Long relatedTransactionId,
+            Long relatedAccountId
+    );
+
+    void deleteAllByUserAndTypeAndRelatedTransactionId(
+            User user,
+            NotificationType type,
+            Long relatedTransactionId
+    );
+
+    void deleteAllByUserAndTypeAndRelatedTransactionIdAndRelatedAccountId(
             User user,
             NotificationType type,
             Long relatedTransactionId,

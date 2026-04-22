@@ -151,12 +151,24 @@ public class NotificationService {
     }
 
     @Transactional
-    public void notifyMoneyReceived(User recipient, User sender, BigDecimal amount, String sourceAccountName) {
-        createNotification(
-                recipient,
-                NotificationType.MONEY_RECEIVED,
-                localizeMoneyReceivedMessage(recipient, sender.getUsername(), amount, sourceAccountName)
-        );
+    public void notifyMoneyReceived(User recipient, User sender, BigDecimal amount, String sourceAccountName, Long relatedTransactionId) {
+        String message = localizeMoneyReceivedMessage(recipient, sender.getUsername(), amount, sourceAccountName);
+        Notification notification = notificationRepository
+                .findFirstByUserAndTypeAndRelatedTransactionIdOrderByCreatedAtDesc(recipient, NotificationType.MONEY_RECEIVED, relatedTransactionId)
+                .orElseGet(Notification::new);
+        notification.setUser(recipient);
+        notification.setType(NotificationType.MONEY_RECEIVED);
+        notification.setMessage(message);
+        notification.setAction(null);
+        notification.setRelatedCategoryId(null);
+        notification.setRelatedReminderId(null);
+        notification.setRelatedTransactionId(relatedTransactionId);
+        notification.setRelatedAccountId(null);
+        notification.setRead(false);
+        if (notification.getCreatedAt() == null) {
+            notification.setCreatedAt(OffsetDateTime.now());
+        }
+        notificationRepository.save(notification);
     }
 
     @Transactional
@@ -191,25 +203,20 @@ public class NotificationService {
                 .map(AccountUser::getUser)
                 .filter(user -> !user.getId().equals(actor.getId()))
                 .distinct()
-                .forEach(recipient -> createNotificationIfAbsent(
+                .forEach(recipient -> upsertTransactionActivityNotification(
                         recipient,
-                        notificationType,
-                        localizeTransactionActivityMessage(
-                                recipient,
-                                actor.getUsername(),
-                                account.getName(),
-                                transactionType,
-                                amount,
-                                transactionId,
-                                account.getId(),
-                                notificationType
-                        ),
-                        null,
-                        null,
-                        null,
+                        actor,
+                        account,
+                        transactionType,
+                        amount,
                         transactionId,
-                        account.getId()
+                        notificationType
                 ));
+    }
+
+    @Transactional
+    public void deleteTransferNotifications(User recipient, Long transactionId) {
+        notificationRepository.deleteAllByUserAndTypeAndRelatedTransactionId(recipient, NotificationType.MONEY_RECEIVED, transactionId);
     }
 
     @Transactional
@@ -368,6 +375,51 @@ public class NotificationService {
             case "fi" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " tililtä " + accountName;
             default -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " kontolt " + accountName;
         };
+    }
+
+    @Transactional
+    private void upsertTransactionActivityNotification(
+            User recipient,
+            User actor,
+            Account account,
+            TransactionType transactionType,
+            BigDecimal amount,
+            Long transactionId,
+            NotificationType notificationType
+    ) {
+        String message = localizeTransactionActivityMessage(
+                recipient,
+                actor.getUsername(),
+                account.getName(),
+                transactionType,
+                amount,
+                transactionId,
+                account.getId(),
+                notificationType
+        );
+
+        Notification notification = notificationRepository
+                .findFirstByUserAndTypeAndRelatedTransactionIdAndRelatedAccountIdOrderByCreatedAtDesc(
+                        recipient,
+                        notificationType,
+                        transactionId,
+                        account.getId()
+                )
+                .orElseGet(Notification::new);
+
+        notification.setUser(recipient);
+        notification.setType(notificationType);
+        notification.setMessage(message);
+        notification.setAction(null);
+        notification.setRelatedCategoryId(null);
+        notification.setRelatedReminderId(null);
+        notification.setRelatedTransactionId(transactionId);
+        notification.setRelatedAccountId(account.getId());
+        notification.setRead(false);
+        if (notification.getCreatedAt() == null) {
+            notification.setCreatedAt(OffsetDateTime.now());
+        }
+        notificationRepository.save(notification);
     }
 
     private String localizeTransactionAction(NotificationType notificationType, String language) {

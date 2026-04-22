@@ -354,7 +354,8 @@ public class TransactionService {
                     targetUser,
                     fromAccount.getOwner(),
                     request.amount(),
-                    fromAccount.getName()
+                    fromAccount.getName(),
+                    saved.getId()
             );
         }
         return toResponse(saved);
@@ -437,6 +438,7 @@ public class TransactionService {
 
         Account newFromAccount = accountService.getAccount(request.fromAccountId());
         Account newToAccount = resolveTransferTargetAccount(currentUser, request);
+        User previousTargetUser = transaction.getToAccount().getOwner();
         User targetUser = newToAccount.getOwner();
         ensureTransferEditableByUser(currentUser, transaction, newFromAccount, newToAccount);
         validateAccountModification(currentUser, newFromAccount);
@@ -454,11 +456,15 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(transaction);
         notifySharedAccountTransactionIfNeeded(newFromAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
         notifySharedAccountTransactionIfNeeded(newToAccount, TransactionType.TRANSFER, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        if (!previousTargetUser.getId().equals(targetUser.getId())) {
+            notificationService.deleteTransferNotifications(previousTargetUser, saved.getId());
+        }
         notificationService.notifyMoneyReceived(
                 targetUser,
                 newFromAccount.getOwner(),
                 request.amount(),
-                newFromAccount.getName()
+                newFromAccount.getName(),
+                saved.getId()
         );
         return toResponse(saved);
     }
@@ -470,6 +476,7 @@ public class TransactionService {
 
         notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.TRANSFER, transaction.getAmount(), transaction.getId(), NotificationType.TRANSACTION_DELETED);
         notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.TRANSFER, transaction.getAmount(), transaction.getId(), NotificationType.TRANSACTION_DELETED);
+        notificationService.deleteTransferNotifications(toAccount.getOwner(), transaction.getId());
         transactionRepository.delete(transaction);
     }
 
