@@ -3,6 +3,6 @@ package ee.kaarel.familybudgetapplication.model;
 public enum AccountType {
     MAIN,
     SAVINGS,
-    GOAL,
+    SUB_ACCOUNT,
     CASH
 }
