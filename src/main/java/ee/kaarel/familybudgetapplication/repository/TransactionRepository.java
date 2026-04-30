@@ -152,4 +152,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             LocalDate from,
             LocalDate to
     );
+
+    List<Transaction> findAllByCreatedByAndCreatedAtAfterOrderByCreatedAtDesc(
+            User createdBy,
+            OffsetDateTime createdAt
+    );
 }

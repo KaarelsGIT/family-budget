@@ -235,6 +235,12 @@ public class AccountService {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Account not found"));
     }
 
+    @Transactional
+    public Account getAccountForUpdate(Long id) {
+        return accountRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Account not found"));
+    }
+
     @Transactional(readOnly = true)
     public Account getDefaultMainAccount(User user) {
         return accountRepository.findByOwnerAndTypeAndIsDefaultTrue(user, AccountType.MAIN)

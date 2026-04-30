@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -131,11 +132,12 @@ public class TransactionService {
     }
 
     private TransactionResponse createIncome(User user, CreateTransactionRequest request) {
+        rejectDuplicateSubmission(user, request);
         Category category = categoryService.getCategory(request.categoryId());
         categoryService.ensureVisible(user, category);
         validateCategoryType(category, TransactionType.INCOME);
 
-        Account toAccount = accountService.getAccount(request.toAccountId());
+        Account toAccount = accountService.getAccountForUpdate(request.toAccountId());
         validateAccountModification(user, toAccount);
 
         Transaction t = buildBaseTransaction(user, request, TransactionType.INCOME);
@@ -149,11 +151,12 @@ public class TransactionService {
     }
 
     private TransactionResponse createExpense(User user, CreateTransactionRequest request) {
+        rejectDuplicateSubmission(user, request);
         Category category = categoryService.getCategory(request.categoryId());
         categoryService.ensureVisible(user, category);
         validateCategoryType(category, TransactionType.EXPENSE);
 
-        Account fromAccount = accountService.getAccount(request.fromAccountId());
+        Account fromAccount = accountService.getAccountForUpdate(request.fromAccountId());
         validateAccountModification(user, fromAccount);
         ensureBalanceWillNotGoNegative(fromAccount, request.amount());
 
@@ -168,8 +171,10 @@ public class TransactionService {
     }
 
     private TransactionResponse createTransfer(User user, CreateTransactionRequest request) {
-        Account fromAccount = accountService.getAccount(request.fromAccountId());
+        rejectDuplicateSubmission(user, request);
+        Account fromAccount = accountService.getAccountForUpdate(request.fromAccountId());
         Account toAccount = resolveTransferTargetAccount(user, request.toAccountId(), request.targetUserId());
+        toAccount = accountService.getAccountForUpdate(toAccount.getId());
 
         validateAccountModification(user, fromAccount);
         validateTransferTarget(user, fromAccount, toAccount);
@@ -390,6 +395,39 @@ public class TransactionService {
         notificationService.notifySharedAccountTransactionUsers(acc, currentUserService.getCurrentUser(), type, amt, id, nType);
     }
 
+    private void rejectDuplicateSubmission(User user, CreateTransactionRequest request) {
+        OffsetDateTime cutoff = OffsetDateTime.now().minusSeconds(5).truncatedTo(ChronoUnit.SECONDS);
+        List<Transaction> recentTransactions = transactionRepository.findAllByCreatedByAndCreatedAtAfterOrderByCreatedAtDesc(user, cutoff);
+
+        for (Transaction recent : recentTransactions) {
+            if (isSameTransaction(recent, request)) {
+                throw new RuntimeException("Duplicate transaction submission detected");
+            }
+        }
+    }
+
+    private boolean isSameTransaction(Transaction transaction, CreateTransactionRequest request) {
+        if (transaction.getType() != request.type()) return false;
+        if (!safeEquals(transaction.getAmount(), request.amount())) return false;
+        if (!safeEquals(transaction.getTransactionDate(), request.transactionDate())) return false;
+        if (!safeEquals(transaction.getComment(), request.comment())) return false;
+        if (!safeEquals(getAccountId(transaction.getFromAccount()), request.fromAccountId())) return false;
+        if (!safeEquals(getAccountId(transaction.getToAccount()), request.toAccountId())) return false;
+        return safeEquals(getCategoryId(transaction.getCategory()), request.categoryId());
+    }
+
+    private Long getAccountId(Account account) {
+        return account != null ? account.getId() : null;
+    }
+
+    private Long getCategoryId(Category category) {
+        return category != null ? category.getId() : null;
+    }
+
+    private boolean safeEquals(Object left, Object right) {
+        return left == null ? right == null : left.equals(right);
+    }
+
     @Transactional(readOnly = true)
     public Transaction getTransaction(Long id) {
         return transactionRepository.findById(id).orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Transaction not found"));
@@ -433,14 +471,9 @@ public class TransactionService {
                 predicates.add(cb.lessThanOrEqualTo(root.get("transactionDate"), to));
             }
 
-            // 4. KATEGOORIA FILTER (Kriitiline osa)
+            var categoryJoin = root.join("category", JoinType.LEFT);
             if (catId != null || mCatId != null || sCatId != null) {
                 Long targetId = catId != null ? catId : (sCatId != null ? sCatId : mCatId);
-
-                // Kasutame LEFT JOIN-i, et me ei kaotaks tehinguid, millel kategooria on null
-                var categoryJoin = root.join("category", JoinType.LEFT);
-
-                // See rida lubab leida nii alamkategooria kui peamise kategooria järgi
                 predicates.add(cb.or(
                         cb.equal(categoryJoin.get("id"), targetId),
                         cb.equal(categoryJoin.get("parentCategory").get("id"), targetId)
