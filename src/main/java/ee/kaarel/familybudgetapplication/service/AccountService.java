@@ -363,6 +363,7 @@ public class AccountService {
 
     private AccountResponse toResponse(Account account, AccountUserRole accessRole) {
         BigDecimal balance = getCalculatedBalance(account);
+        User currentUser = currentUserService.getCurrentUser();
         return new AccountResponse(
                 account.getId(),
                 account.getName(),
