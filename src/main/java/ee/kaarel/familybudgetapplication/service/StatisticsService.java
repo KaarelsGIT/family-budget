@@ -44,7 +44,7 @@ public class StatisticsService {
     }
 
     @Transactional(readOnly = true)
-    public YearlyStatisticsResponse getYearly(Integer year, Long userId, Long accountId) {
+    public YearlyStatisticsResponse getYearly(Integer year, Integer monthFilter, Long userId, Long accountId) {
         User currentUser = currentUserService.getCurrentUser();
         int effectiveYear = year != null ? year : LocalDate.now().getYear();
         if (userId != null && currentUser.getRole() == Role.CHILD && !currentUser.getId().equals(userId)) {
@@ -74,6 +74,7 @@ public class StatisticsService {
 
         List<YearlyStatisticsRow> rows = transactionRepository.findYearlyStatisticsRows(
                 effectiveYear,
+                monthFilter,
                 queryUserId,
                 accountId,
                 visibleAccountIds
@@ -316,12 +317,17 @@ public class StatisticsService {
     }
 
     private BigDecimal calculateRate(BigDecimal savings, BigDecimal income) {
-        if (income == null || income.compareTo(BigDecimal.ZERO) == 0) {
+        BigDecimal safeIncome = normalize(income);
+        BigDecimal safeSavings = normalize(savings);
+
+        if (safeIncome.compareTo(BigDecimal.ZERO) <= 0 || safeSavings.compareTo(BigDecimal.ZERO) <= 0) {
             return BigDecimal.ZERO;
         }
-        return savings
+
+        return safeSavings
+                .divide(safeIncome, 4, RoundingMode.HALF_UP)
                 .multiply(HUNDRED)
-                .divide(income, 2, RoundingMode.HALF_UP);
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private BigDecimal normalize(BigDecimal value) {

@@ -26,9 +26,10 @@ public class StatisticsController {
             @RequestParam Map<String, String> params
     ) {
         Integer year = parseInteger(firstNonNull(params, "year"));
+        Integer month = parseInteger(firstNonNull(params, "month"));
         Long userId = parseLong(firstNonNull(params, "user_id", "userId"));
         Long accountId = parseLong(firstNonNull(params, "account_id", "accountId"));
-        return statisticsService.getYearly(year == null ? LocalDate.now().getYear() : year, userId, accountId);
+        return statisticsService.getYearly(year == null ? LocalDate.now().getYear() : year, month, userId, accountId);
     }
 
     private String firstNonNull(Map<String, String> params, String... keys) {

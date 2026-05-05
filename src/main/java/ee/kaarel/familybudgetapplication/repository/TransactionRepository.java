@@ -44,6 +44,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             left join t.category category
             left join category.parentCategory parentCategory
             where year(t.transactionDate) = :year
+            and (:month is null or month(t.transactionDate) = :month)
             and (:userId is null or t.createdBy.id = :userId)
             and (:accountId is null or fromAccount.id = :accountId or toAccount.id = :accountId)
             and (fromAccount.id in :visibleAccountIds or toAccount.id in :visibleAccountIds)
@@ -63,6 +64,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             """)
     List<YearlyStatisticsRow> findYearlyStatisticsRows(
             @Param("year") int year,
+            @Param("month") Integer month,
             @Param("userId") Long userId,
             @Param("accountId") Long accountId,
             @Param("visibleAccountIds") Collection<Long> visibleAccountIds
