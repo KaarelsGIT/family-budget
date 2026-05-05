@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.controller;
 
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
+import ee.kaarel.familybudgetapplication.dto.account.AccountBalanceAdjustmentResponse;
 import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
@@ -62,6 +63,12 @@ public class AccountController {
     public ApiResponse<?> adjustBalance(@PathVariable Long id, @Valid @RequestBody AdjustBalanceRequest request) {
         logCurrentUser("PATCH /api/accounts/" + id + "/adjust-balance");
         return new ApiResponse<>(accountService.adjustBalance(id, request));
+    }
+
+    @GetMapping("/{id}/adjust-balance-history")
+    public ApiResponse<java.util.List<AccountBalanceAdjustmentResponse>> getAdjustBalanceHistory(@PathVariable Long id) {
+        logCurrentUser("GET /api/accounts/" + id + "/adjust-balance-history");
+        return new ApiResponse<>(accountService.getRecentBalanceAdjustments(id));
     }
 
     @PostMapping("/{id}/share")

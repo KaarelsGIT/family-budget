@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.repository;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountBalanceAdjustment;
 import java.math.BigDecimal;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,4 +16,6 @@ public interface AccountBalanceAdjustmentRepository extends JpaRepository<Accoun
             where adjustment.account = :account
             """)
     BigDecimal calculateAdjustmentBalance(@Param("account") Account account);
+
+    List<AccountBalanceAdjustment> findTop5ByAccountIdOrderByCreatedAtDesc(Long accountId);
 }

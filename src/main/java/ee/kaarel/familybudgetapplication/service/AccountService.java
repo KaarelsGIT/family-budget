@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.account.AccountResponse;
+import ee.kaarel.familybudgetapplication.dto.account.AccountBalanceAdjustmentResponse;
 import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
 import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.AccountShareResponse;
@@ -198,6 +199,25 @@ public class AccountService {
 
         accountRepository.save(account);
         return toResponse(account);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AccountBalanceAdjustmentResponse> getRecentBalanceAdjustments(Long id) {
+        User currentUser = currentUserService.getCurrentUser();
+        Account account = accountRepository.findWithManualAdjustmentsById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Account not found"));
+        ensureCanAccessAccount(currentUser, account);
+
+        return account.getManualAdjustments().stream()
+                .sorted((left, right) -> right.getCreatedAt().compareTo(left.getCreatedAt()))
+                .limit(5)
+                .map(adjustment -> new AccountBalanceAdjustmentResponse(
+                        adjustment.getId(),
+                        adjustment.getAmount(),
+                        adjustment.getComment(),
+                        adjustment.getCreatedAt()
+                ))
+                .toList();
     }
 
     @Transactional
