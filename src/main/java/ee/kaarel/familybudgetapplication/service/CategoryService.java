@@ -74,6 +74,7 @@ public class CategoryService {
         User currentUser = currentUserService.getCurrentUser();
         Category category = getCategory(id);
         ensureVisible(currentUser, category);
+        ensureOwner(currentUser, category);
 
         String name = request.name() != null ? request.name() : category.getName();
         TransactionType type = request.type() != null ? request.type() : category.getType();
@@ -90,6 +91,7 @@ public class CategoryService {
         User currentUser = currentUserService.getCurrentUser();
         Category category = getCategory(id);
         ensureVisible(currentUser, category);
+        ensureOwner(currentUser, category);
         if (categoryRepository.existsByParentCategory(category)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Cannot delete category with subcategories");
         }
@@ -109,20 +111,20 @@ public class CategoryService {
     }
 
     public void ensureVisible(User currentUser, Category category) {
-        if (currentUser.getRole() == Role.ADMIN) {
-            return;
+        if (!isGroupVisibleForRole(currentUser.getRole(), category.getGroup())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot access this category");
         }
-        if (currentUser.getRole() == Role.CHILD && category.getGroup() != CategoryGroup.CHILD) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Children cannot access this category");
+    }
+
+    private void ensureOwner(User currentUser, Category category) {
+        if (!currentUser.getId().equals(category.getUserId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only the category creator can modify this category");
         }
     }
 
     private void validateGroupAccess(User currentUser, CategoryGroup group) {
-        if (currentUser.getRole() == Role.CHILD && group != CategoryGroup.CHILD) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Children can only manage CHILD categories");
-        }
-        if (currentUser.getRole() == Role.PARENT && group != CategoryGroup.FAMILY) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Parents can only manage FAMILY categories");
+        if (!isGroupVisibleForRole(currentUser.getRole(), group)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot manage this category group");
         }
     }
 
@@ -145,8 +147,6 @@ public class CategoryService {
             if (parentCategory.getId().equals(category.getId())) {
                 throw new ApiException(HttpStatus.BAD_REQUEST, "Category cannot be its own parent");
             }
-            effectiveGroup = parentCategory.getGroup();
-            effectiveType = parentCategory.getType();
         } else {
             validateCategoryShape(effectiveType);
             validateGroupAccess(currentUser, effectiveGroup);
@@ -204,9 +204,26 @@ public class CategoryService {
                 query.distinct(true);
             }
             if (currentUser.getRole() == Role.ADMIN || currentUser.getRole() == Role.PARENT) {
-                return cb.conjunction();
+                if (currentUser.getRole() == Role.ADMIN) {
+                    return cb.conjunction();
+                }
+                return cb.or(
+                        cb.equal(root.get("group"), CategoryGroup.FAMILY),
+                        cb.equal(root.get("group"), CategoryGroup.PARENT)
+                );
             }
-            return cb.equal(root.get("group"), CategoryGroup.CHILD);
+            return cb.or(
+                    cb.equal(root.get("group"), CategoryGroup.FAMILY),
+                    cb.equal(root.get("group"), CategoryGroup.CHILD)
+            );
+        };
+    }
+
+    private boolean isGroupVisibleForRole(Role role, CategoryGroup group) {
+        return switch (role) {
+            case ADMIN -> true;
+            case PARENT -> group == CategoryGroup.FAMILY || group == CategoryGroup.PARENT;
+            case CHILD -> group == CategoryGroup.FAMILY || group == CategoryGroup.CHILD;
         };
     }
 

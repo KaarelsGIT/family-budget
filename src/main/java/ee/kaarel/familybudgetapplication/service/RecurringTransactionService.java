@@ -87,7 +87,13 @@ public class RecurringTransactionService {
                 .data()
                 .stream()
                 .filter(category -> category.type() == TransactionType.INCOME || category.type() == TransactionType.EXPENSE)
-                .filter(category -> currentUser.getRole() != Role.CHILD || category.group() == ee.kaarel.familybudgetapplication.model.CategoryGroup.CHILD)
+                .filter(category -> switch (currentUser.getRole()) {
+                    case ADMIN -> true;
+                    case PARENT -> category.group() == ee.kaarel.familybudgetapplication.model.CategoryGroup.FAMILY
+                            || category.group() == ee.kaarel.familybudgetapplication.model.CategoryGroup.PARENT;
+                    case CHILD -> category.group() == ee.kaarel.familybudgetapplication.model.CategoryGroup.FAMILY
+                            || category.group() == ee.kaarel.familybudgetapplication.model.CategoryGroup.CHILD;
+                })
                 .map(category -> new RecurringTransactionCategoryResponse(
                         category.id(),
                         category.name(),
