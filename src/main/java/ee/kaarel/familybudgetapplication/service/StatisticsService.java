@@ -67,9 +67,14 @@ public class StatisticsService {
             return emptyStatistics(effectiveYear);
         }
 
+        Long queryUserId = userId;
+        if (currentUser.getRole() == Role.CHILD && queryUserId == null) {
+            queryUserId = currentUser.getId();
+        }
+
         List<YearlyStatisticsRow> rows = transactionRepository.findYearlyStatisticsRows(
                 effectiveYear,
-                effectiveUser.getId(),
+                queryUserId,
                 accountId,
                 visibleAccountIds
         );
@@ -79,8 +84,8 @@ public class StatisticsService {
             monthly.put(month, new MonthlyAccumulator());
         }
 
-        Map<Long, CategoryAccumulator> incomeCategories = new LinkedHashMap<>();
-        Map<Long, CategoryAccumulator> expenseCategories = new LinkedHashMap<>();
+        Map<String, CategoryAccumulator> incomeCategories = new LinkedHashMap<>();
+        Map<String, CategoryAccumulator> expenseCategories = new LinkedHashMap<>();
         Map<Long, AccountAccumulator> accounts = new LinkedHashMap<>();
         Map<Integer, TransferMonthAccumulator> transferMonthly = new LinkedHashMap<>();
         for (int month = 1; month <= 12; month++) {
@@ -102,6 +107,12 @@ public class StatisticsService {
                 if (month >= 1 && month <= 12) {
                     monthly.get(month).income = monthly.get(month).income.add(amount);
                 }
+                if (isSavingsAccountType(row.toAccountType())) {
+                    savingsTotal = savingsTotal.add(amount);
+                    if (month >= 1 && month <= 12) {
+                        monthly.get(month).savings = monthly.get(month).savings.add(amount);
+                    }
+                }
                 addAccountIncome(accounts, row.toAccountId(), row.toAccountName(), amount);
                 accumulateCategory(incomeCategories, row, amount, month);
                 continue;
@@ -111,6 +122,12 @@ public class StatisticsService {
                 expenses = expenses.add(amount);
                 if (month >= 1 && month <= 12) {
                     monthly.get(month).expenses = monthly.get(month).expenses.add(amount);
+                }
+                if (isSavingsAccountType(row.fromAccountType())) {
+                    savingsTotal = savingsTotal.subtract(amount);
+                    if (month >= 1 && month <= 12) {
+                        monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
+                    }
                 }
                 addAccountExpense(accounts, row.fromAccountId(), row.fromAccountName(), amount);
                 accumulateCategory(expenseCategories, row, amount, month);
@@ -126,10 +143,19 @@ public class StatisticsService {
                     transferMonth.count += row.transactionCount() == null ? 0L : row.transactionCount();
                 }
 
-                if (isSavingsAccountType(row.toAccountType())) {
+                boolean toSavings = isSavingsAccountType(row.toAccountType());
+                boolean fromSavings = isSavingsAccountType(row.fromAccountType());
+                if (toSavings) {
                     savingsTotal = savingsTotal.add(amount);
                     if (month >= 1 && month <= 12) {
                         monthly.get(month).savings = monthly.get(month).savings.add(amount);
+                    }
+                }
+
+                if (fromSavings) {
+                    savingsTotal = savingsTotal.subtract(amount);
+                    if (month >= 1 && month <= 12) {
+                        monthly.get(month).savings = monthly.get(month).savings.subtract(amount);
                     }
                 }
 
@@ -208,13 +234,13 @@ public class StatisticsService {
         );
     }
 
-    private void accumulateCategory(Map<Long, CategoryAccumulator> buckets, YearlyStatisticsRow row, BigDecimal amount, int month) {
+    private void accumulateCategory(Map<String, CategoryAccumulator> buckets, YearlyStatisticsRow row, BigDecimal amount, int month) {
         if (row.categoryId() == null) {
             return;
         }
 
-        Long parentKey = row.parentCategoryId() != null ? row.parentCategoryId() : row.categoryId();
         String parentName = row.parentCategoryId() != null ? row.parentCategoryName() : row.categoryName();
+        String parentKey = categoryBucketKey(parentName);
         CategoryAccumulator bucket = buckets.computeIfAbsent(parentKey, key -> new CategoryAccumulator(parentName));
         bucket.total = bucket.total.add(amount);
         if (month >= 1 && month <= 12) {
@@ -222,8 +248,9 @@ public class StatisticsService {
         }
 
         if (row.parentCategoryId() != null) {
+            String subcategoryKey = categoryBucketKey(parentName + ">" + row.categoryName());
             SubcategoryAccumulator subcategory = bucket.subcategories.computeIfAbsent(
-                    row.categoryId(),
+                    subcategoryKey,
                     key -> new SubcategoryAccumulator(row.categoryName())
             );
             subcategory.total = subcategory.total.add(amount);
@@ -233,7 +260,7 @@ public class StatisticsService {
         }
     }
 
-    private List<YearlyStatisticsResponse.CategoryEntry> mapCategories(Map<Long, CategoryAccumulator> buckets) {
+    private List<YearlyStatisticsResponse.CategoryEntry> mapCategories(Map<String, CategoryAccumulator> buckets) {
         return buckets.values().stream()
                 .map(bucket -> new YearlyStatisticsResponse.CategoryEntry(
                         bucket.parentCategory,
@@ -305,6 +332,14 @@ public class StatisticsService {
         return accountType == AccountType.SAVINGS;
     }
 
+    private String categoryBucketKey(String categoryName) {
+        return normalizeCategoryName(categoryName);
+    }
+
+    private String normalizeCategoryName(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
+    }
+
     private static final class MonthlyAccumulator {
         private BigDecimal income = BigDecimal.ZERO;
         private BigDecimal expenses = BigDecimal.ZERO;
@@ -327,7 +362,7 @@ public class StatisticsService {
     private static final class CategoryAccumulator {
         private final String parentCategory;
         private BigDecimal total = BigDecimal.ZERO;
-        private final Map<Long, SubcategoryAccumulator> subcategories = new LinkedHashMap<>();
+        private final Map<String, SubcategoryAccumulator> subcategories = new LinkedHashMap<>();
         private final Map<Integer, BigDecimal> monthly = createMonthlyBuckets();
 
         private CategoryAccumulator(String parentCategory) {
