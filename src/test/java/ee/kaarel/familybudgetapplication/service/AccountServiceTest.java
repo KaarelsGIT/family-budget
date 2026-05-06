@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
+import ee.kaarel.familybudgetapplication.dto.account.AccountResponse;
 import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
 import ee.kaarel.familybudgetapplication.model.AccountUser;
 import ee.kaarel.familybudgetapplication.model.AccountUserRole;
@@ -19,8 +20,8 @@ import ee.kaarel.familybudgetapplication.repository.AccountRepository;
 import ee.kaarel.familybudgetapplication.repository.AccountUserRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
-import java.util.List;
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 
 @ExtendWith(MockitoExtension.class)
 class AccountServiceTest {
@@ -109,6 +112,26 @@ class AccountServiceTest {
         assertThat(targets.otherUsers())
                 .extracting(user -> user.username())
                 .containsExactly("admin", "parent");
+    }
+
+    @Test
+    void adminSeesAllAccountsWithoutOwnMainAccount() {
+        User admin = createUser(1L, "admin", Role.ADMIN);
+        User parent = createUser(2L, "parent", Role.PARENT);
+
+        Account parentAccount = createMainAccount(10L, parent);
+
+        when(currentUserService.getCurrentUser()).thenReturn(admin);
+        when(accountRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(parentAccount), PageRequest.of(0, 20), 1));
+        when(accountUserRepository.findAllByUser(admin)).thenReturn(List.of());
+        when(transactionRepository.calculateBalance(parentAccount)).thenReturn(BigDecimal.ZERO);
+        when(accountBalanceAdjustmentRepository.calculateAdjustmentBalance(parentAccount)).thenReturn(BigDecimal.ZERO);
+
+        var accounts = accountService.getAccounts(PageRequest.of(0, 20));
+
+        assertThat(accounts.data()).hasSize(1);
+        assertThat(accounts.data()).extracting(AccountResponse::ownerUsername).containsExactly("parent");
     }
 
     private AccountUser createAccountUser(Account account, User user, AccountUserRole role) {

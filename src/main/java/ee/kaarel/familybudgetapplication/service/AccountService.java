@@ -359,6 +359,9 @@ public class AccountService {
                 root.fetch("accountUsers", JoinType.LEFT).fetch("user", JoinType.LEFT);
                 query.distinct(true);
             }
+            if (currentUser.getRole() == Role.ADMIN) {
+                return cb.conjunction();
+            }
             var accountUserJoin = root.join("accountUsers", JoinType.LEFT);
             var ownedOrShared = cb.or(
                     cb.equal(root.get("owner").get("id"), currentUser.getId()),
@@ -473,7 +476,7 @@ public class AccountService {
 
     private boolean canAccessFamilyAccount(User currentUser, Account account) {
         if (currentUser.getFamilyId() == null) {
-            return false;
+            return currentUser.getRole() == Role.ADMIN;
         }
 
         if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.PARENT) {

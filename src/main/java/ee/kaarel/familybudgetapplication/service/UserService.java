@@ -77,6 +77,10 @@ public class UserService {
         user.setPreferredLanguage("et");
         User savedUser = userRepository.save(user);
 
+        if (savedUser.getRole() == Role.ADMIN) {
+            return toResponse(savedUser);
+        }
+
         Account mainAccount = new Account();
         mainAccount.setName(savedUser.getUsername() + " MAIN");
         mainAccount.setOwner(savedUser);
@@ -241,6 +245,9 @@ public class UserService {
         if (currentUser.getRole() == Role.ADMIN) {
             return true;
         }
+        if (targetUser.getRole() == Role.ADMIN) {
+            return false;
+        }
         if (currentUser.getRole() == Role.PARENT) {
             return true;
         }
@@ -248,7 +255,12 @@ public class UserService {
     }
 
     private boolean canTransferToUser(User currentUser, User targetUser) {
-        return Objects.equals(currentUser.getFamilyId(), targetUser.getFamilyId());
+        if (currentUser.getRole() == Role.ADMIN) {
+            return true;
+        }
+
+        return targetUser.getRole() != Role.ADMIN
+                && Objects.equals(currentUser.getFamilyId(), targetUser.getFamilyId());
     }
 
     private boolean canShowSelectableUser(User currentUser, User targetUser) {
@@ -256,6 +268,9 @@ public class UserService {
             return true;
         }
         if (currentUser.getRole() == Role.PARENT) {
+            if (targetUser.getRole() == Role.ADMIN) {
+                return false;
+            }
             return true;
         }
         return targetUser.getId().equals(currentUser.getId());

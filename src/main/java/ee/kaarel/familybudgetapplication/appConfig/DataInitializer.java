@@ -1,14 +1,8 @@
 package ee.kaarel.familybudgetapplication.appConfig;
 
-import ee.kaarel.familybudgetapplication.model.Account;
-import ee.kaarel.familybudgetapplication.model.AccountUser;
-import ee.kaarel.familybudgetapplication.model.AccountType;
-import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
-import ee.kaarel.familybudgetapplication.repository.AccountUserRepository;
-import ee.kaarel.familybudgetapplication.repository.AccountRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
@@ -21,8 +15,6 @@ public class DataInitializer {
     @Bean
     CommandLineRunner createDefaultAdmin(
             UserRepository userRepository,
-            AccountRepository accountRepository,
-            AccountUserRepository accountUserRepository,
             PasswordEncoder passwordEncoder
     ) {
         return args -> {
@@ -38,21 +30,7 @@ public class DataInitializer {
             admin.setPreferredLanguage("et");
             User savedAdmin = userRepository.save(admin);
             savedAdmin.setFamilyId(savedAdmin.getId());
-            savedAdmin = userRepository.save(savedAdmin);
-
-            Account account = new Account();
-            account.setName("admin MAIN");
-            account.setOwner(savedAdmin);
-            account.setType(AccountType.MAIN);
-            account.setDefault(true);
-            account.setDeletionRequested(false);
-            Account savedAccount = accountRepository.save(account);
-
-            AccountUser ownerLink = new AccountUser();
-            ownerLink.setAccount(savedAccount);
-            ownerLink.setUser(savedAdmin);
-            ownerLink.setRole(AccountUserRole.OWNER);
-            accountUserRepository.save(ownerLink);
+            userRepository.save(savedAdmin);
         };
     }
 }
