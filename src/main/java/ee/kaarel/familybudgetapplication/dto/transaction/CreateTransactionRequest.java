@@ -16,6 +16,8 @@ public record CreateTransactionRequest(
         Long categoryId,
         LocalDate transactionDate,
         @Size(max = 500) String comment,
-        Long reminderId
+        Long reminderId,
+        boolean useMicroSavings,
+        Integer multiplier
 ) {
 }

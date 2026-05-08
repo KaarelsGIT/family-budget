@@ -559,7 +559,9 @@ public class RecurringTransactionService {
                     recurringTransaction.getCategory().getId(),
                     reminder.getDueDate(),
                     recurringTransaction.getComment(),
-                    reminder.getId()
+                    reminder.getId(),
+                    false,
+                    null
             );
             case EXPENSE -> new CreateTransactionRequest(
                     recurringTransaction.getAmount(),
@@ -570,7 +572,9 @@ public class RecurringTransactionService {
                     recurringTransaction.getCategory().getId(),
                     reminder.getDueDate(),
                     recurringTransaction.getComment(),
-                    reminder.getId()
+                    reminder.getId(),
+                    false,
+                    null
             );
             case TRANSFER -> throw new ApiException(HttpStatus.BAD_REQUEST, "Recurring transactions cannot use transfer categories");
         };

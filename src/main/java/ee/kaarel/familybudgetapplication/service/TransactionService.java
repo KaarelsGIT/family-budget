@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.transaction.TransactionCreateResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
@@ -109,7 +110,7 @@ public class TransactionService {
     }
 
     @Transactional
-    public TransactionResponse create(CreateTransactionRequest request) {
+    public TransactionCreateResponse create(CreateTransactionRequest request) {
         return createInternal(currentUserService.getCurrentUser(), request);
     }
 
@@ -118,10 +119,10 @@ public class TransactionService {
      */
     @Transactional
     public TransactionResponse createForUser(User user, CreateTransactionRequest request) {
-        return createInternal(user, request);
+        return createInternal(user, request).expense();
     }
 
-    private TransactionResponse createInternal(User user, CreateTransactionRequest request) {
+    private TransactionCreateResponse createInternal(User user, CreateTransactionRequest request) {
         if (request.type() == null) throw new ApiException(HttpStatus.BAD_REQUEST, "Transaction type is required");
 
         return switch (request.type()) {
@@ -131,7 +132,7 @@ public class TransactionService {
         };
     }
 
-    private TransactionResponse createIncome(User user, CreateTransactionRequest request) {
+    private TransactionCreateResponse createIncome(User user, CreateTransactionRequest request) {
         rejectDuplicateSubmission(user, request);
         Category category = categoryService.getCategory(request.categoryId());
         categoryService.ensureVisible(user, category);
@@ -147,10 +148,10 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(t);
         completeMatchingReminderIfPresent(saved, request.reminderId());
         notifySharedAccountTransactionIfNeeded(toAccount, TransactionType.INCOME, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
-        return toResponse(saved);
+        return new TransactionCreateResponse(toResponse(saved), BigDecimal.ZERO);
     }
 
-    private TransactionResponse createExpense(User user, CreateTransactionRequest request) {
+    private TransactionCreateResponse createExpense(User user, CreateTransactionRequest request) {
         rejectDuplicateSubmission(user, request);
         Category category = categoryService.getCategory(request.categoryId());
         categoryService.ensureVisible(user, category);
@@ -158,7 +159,25 @@ public class TransactionService {
 
         Account fromAccount = accountService.getAccountForUpdate(request.fromAccountId());
         validateAccountModification(user, fromAccount);
-        ensureBalanceWillNotGoNegative(fromAccount, request.amount());
+        BigDecimal microSavingsAmount = BigDecimal.ZERO;
+        BigDecimal transferAmount = BigDecimal.ZERO;
+        Account savingsAccount = null;
+
+        if (request.useMicroSavings()) {
+            int multiplier = request.multiplier() != null ? request.multiplier() : 1;
+            if (multiplier <= 0) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Multiplier must be greater than zero");
+            }
+
+            microSavingsAmount = calculateMicroSavingsAmount(request.amount());
+            transferAmount = microSavingsAmount.multiply(BigDecimal.valueOf(multiplier));
+            if (transferAmount.compareTo(BigDecimal.ZERO) > 0) {
+                savingsAccount = accountService.getSavingsAccountForUser(user);
+                ensureBalanceWillNotGoNegative(fromAccount, request.amount().add(transferAmount));
+            }
+        } else {
+            ensureBalanceWillNotGoNegative(fromAccount, request.amount());
+        }
 
         Transaction t = buildBaseTransaction(user, request, TransactionType.EXPENSE);
         t.setFromAccount(fromAccount);
@@ -167,10 +186,24 @@ public class TransactionService {
         Transaction saved = transactionRepository.save(t);
         completeMatchingReminderIfPresent(saved, request.reminderId());
         notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.EXPENSE, saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_CREATED);
-        return toResponse(saved);
+
+        if (transferAmount.compareTo(BigDecimal.ZERO) > 0 && savingsAccount != null) {
+            Transaction savingsTransfer = buildBaseTransaction(user, request, TransactionType.TRANSFER);
+            savingsTransfer.setAmount(transferAmount);
+            savingsTransfer.setComment("Mikrokogumine");
+            savingsTransfer.setTransferId(UUID.randomUUID().toString());
+            savingsTransfer.setFromAccount(fromAccount);
+            savingsTransfer.setToAccount(savingsAccount);
+
+            Transaction savedTransfer = transactionRepository.save(savingsTransfer);
+            notifySharedAccountTransactionIfNeeded(fromAccount, TransactionType.TRANSFER, savedTransfer.getAmount(), savedTransfer.getId(), NotificationType.TRANSACTION_CREATED);
+            notifySharedAccountTransactionIfNeeded(savingsAccount, TransactionType.TRANSFER, savedTransfer.getAmount(), savedTransfer.getId(), NotificationType.TRANSACTION_CREATED);
+        }
+
+        return new TransactionCreateResponse(toResponse(saved), transferAmount);
     }
 
-    private TransactionResponse createTransfer(User user, CreateTransactionRequest request) {
+    private TransactionCreateResponse createTransfer(User user, CreateTransactionRequest request) {
         rejectDuplicateSubmission(user, request);
         Account fromAccount = accountService.getAccountForUpdate(request.fromAccountId());
         Account toAccount = resolveTransferTargetAccount(user, request.toAccountId(), request.targetUserId());
@@ -192,7 +225,7 @@ public class TransactionService {
         if (request.targetUserId() != null) {
             notificationService.notifyMoneyReceived(userService.findUser(request.targetUserId()), fromAccount.getOwner(), request.amount(), fromAccount.getName(), saved.getId());
         }
-        return toResponse(saved);
+        return new TransactionCreateResponse(toResponse(saved), BigDecimal.ZERO);
     }
 
     @Transactional
@@ -320,6 +353,14 @@ public class TransactionService {
         if (accountService.getCalculatedBalance(acc).compareTo(amount) < 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Kontol ei ole piisavalt raha");
         }
+    }
+
+    private BigDecimal calculateMicroSavingsAmount(BigDecimal amount) {
+        BigDecimal remainder = amount.remainder(BigDecimal.ONE);
+        if (remainder.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return BigDecimal.ONE.subtract(remainder);
     }
 
     private void ensureExpenseUpdateWillNotGoNegative(Transaction t, Account acc, BigDecimal newAmount) {

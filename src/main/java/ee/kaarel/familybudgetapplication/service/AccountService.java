@@ -86,6 +86,15 @@ public class AccountService {
         return accountRepository.findAll(visibleAccountSpecification(currentUser), Sort.by("owner.username").ascending().and(Sort.by("name").ascending()));
     }
 
+    @Transactional(readOnly = true)
+    public Account getSavingsAccountForUser(User user) {
+        return accountRepository.findAll(visibleAccountSpecification(user), Sort.by("owner.username").ascending().and(Sort.by("name").ascending()))
+                .stream()
+                .filter(account -> account.getOwner().getId().equals(user.getId()) && account.getType() == AccountType.SAVINGS)
+                .findFirst()
+                .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Savings account not found"));
+    }
+
     @Transactional
     public AccountResponse createAccount(CreateAccountRequest request) {
         User currentUser = currentUserService.getCurrentUser();

@@ -132,7 +132,7 @@ class TransactionServiceTest {
         when(accountService.getCalculatedBalance(fromAccount)).thenReturn(BigDecimal.valueOf(100));
         when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        transactionService.updateTransfer(
+        transactionService.update(
                 transaction.getId(),
                 new UpdateTransactionRequest(
                         BigDecimal.valueOf(30),
@@ -164,7 +164,8 @@ class TransactionServiceTest {
                 eq(recipient),
                 eq(actor),
                 eq(BigDecimal.valueOf(30)),
-                eq("Source")
+                eq("Source"),
+                eq(transaction.getId())
         );
     }
 
@@ -195,6 +196,8 @@ class TransactionServiceTest {
                 null,
                 LocalDate.now(),
                 "Transfer to account",
+                null,
+                false,
                 null
         ));
 
@@ -210,7 +213,8 @@ class TransactionServiceTest {
                 eq(recipient),
                 eq(actor),
                 eq(BigDecimal.valueOf(25)),
-                eq("Source")
+                eq("Source"),
+                any()
         );
     }
 
@@ -238,6 +242,8 @@ class TransactionServiceTest {
                         null,
                         LocalDate.now(),
                         "Transfer to account",
+                        null,
+                        false,
                         null
                 )
         ));
@@ -283,6 +289,8 @@ class TransactionServiceTest {
                 category.getId(),
                 today,
                 "Utilities payment",
+                null,
+                false,
                 null
         ));
 
@@ -327,7 +335,9 @@ class TransactionServiceTest {
                 category.getId(),
                 today,
                 "Utilities payment",
-                reminder.getId()
+                reminder.getId(),
+                false,
+                null
         ));
 
         ArgumentCaptor<TransactionReminder> reminderCaptor = ArgumentCaptor.forClass(TransactionReminder.class);
@@ -346,7 +356,7 @@ class TransactionServiceTest {
         when(currentUserService.getCurrentUser()).thenReturn(actor);
         when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
 
-        transactionService.deleteTransfer(transaction.getId());
+        transactionService.delete(transaction.getId());
 
         verify(notificationService).notifySharedAccountTransactionUsers(
                 eq(fromAccount),
