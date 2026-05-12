@@ -1,5 +1,6 @@
 package ee.kaarel.familybudgetapplication.dto.account;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.AccountType;
@@ -15,6 +16,7 @@ public record AccountResponse(
         AccountType type,
         boolean isDefault,
         boolean deletionRequested,
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         BigDecimal balance,
         AccountUserRole accessRole,
         List<AccountShareResponse> sharedUsers

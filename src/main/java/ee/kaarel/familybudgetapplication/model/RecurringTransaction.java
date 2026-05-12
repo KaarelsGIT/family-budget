@@ -40,7 +40,7 @@ public class RecurringTransaction {
     @JoinColumn(name = "account_id")
     private Account account;
 
-    @Column(nullable = false, precision = 19, scale = 2)
+    @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;
 
     @Column(length = 500)

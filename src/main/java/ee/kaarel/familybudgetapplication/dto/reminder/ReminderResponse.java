@@ -1,5 +1,6 @@
 package ee.kaarel.familybudgetapplication.dto.reminder;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ee.kaarel.familybudgetapplication.model.ReminderStatus;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import java.math.BigDecimal;
@@ -15,6 +16,7 @@ public record ReminderResponse(
         String categoryName,
         Long accountId,
         String accountName,
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         BigDecimal amount,
         String comment,
         LocalDate dueDate,

@@ -4,6 +4,7 @@ import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UserResponse;
+import java.util.Collections;
 import ee.kaarel.familybudgetapplication.model.Account;
 import ee.kaarel.familybudgetapplication.model.AccountUserRole;
 import ee.kaarel.familybudgetapplication.model.AccountType;
@@ -191,6 +192,20 @@ public class UserService {
         return toResponse(userRepository.save(targetUser));
     }
 
+    @Transactional(readOnly = true)
+    public List<Long> getFamilyDashboardSelection() {
+        User currentUser = currentUserService.getCurrentUser();
+        return parseSelection(currentUser.getFamilyDashboardSelection());
+    }
+
+    @Transactional
+    public List<Long> updateFamilyDashboardSelection(List<Long> selectedUserIds) {
+        User currentUser = currentUserService.getCurrentUser();
+        currentUser.setFamilyDashboardSelection(serializeSelection(selectedUserIds));
+        userRepository.save(currentUser);
+        return parseSelection(currentUser.getFamilyDashboardSelection());
+    }
+
     @Transactional
     public void deleteUser(Long id) {
         User currentUser = currentUserService.getCurrentUser();
@@ -239,6 +254,44 @@ public class UserService {
         if (!"et".equals(preferredLanguage) && !"en".equals(preferredLanguage) && !"fi".equals(preferredLanguage)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported language");
         }
+    }
+
+    private List<Long> parseSelection(String rawSelection) {
+        if (rawSelection == null || rawSelection.isBlank()) {
+            return Collections.emptyList();
+        }
+
+        String trimmed = rawSelection.trim();
+        if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) {
+          return Collections.emptyList();
+        }
+
+        String body = trimmed.substring(1, trimmed.length() - 1).trim();
+        if (body.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        String[] parts = body.split(",");
+        List<Long> result = new java.util.ArrayList<>();
+        for (String part : parts) {
+            try {
+                result.add(Long.valueOf(part.trim()));
+            } catch (NumberFormatException ignored) {
+                return Collections.emptyList();
+            }
+        }
+        return result;
+    }
+
+    private String serializeSelection(List<Long> selectedUserIds) {
+        if (selectedUserIds == null || selectedUserIds.isEmpty()) {
+            return "[]";
+        }
+        return selectedUserIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .map(String::valueOf)
+                .collect(java.util.stream.Collectors.joining(",", "[", "]"));
     }
 
     private boolean canSelectUser(User currentUser, User targetUser) {

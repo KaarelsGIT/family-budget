@@ -1,5 +1,6 @@
 package ee.kaarel.familybudgetapplication.dto.transaction;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -7,6 +8,7 @@ import java.time.OffsetDateTime;
 
 public record TransactionResponse(
         Long id,
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         BigDecimal amount,
         String transferId,
         TransactionType type,

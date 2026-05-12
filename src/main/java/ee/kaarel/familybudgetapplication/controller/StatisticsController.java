@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.controller;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.statistics.YearlyStatisticsResponse;
+import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.service.StatisticsService;
 import java.time.LocalDate;
 import java.util.Map;
@@ -29,7 +30,8 @@ public class StatisticsController {
         Integer month = parseInteger(firstNonNull(params, "month"));
         Long userId = parseLong(firstNonNull(params, "user_id", "userId"));
         Long accountId = parseLong(firstNonNull(params, "account_id", "accountId"));
-        return statisticsService.getYearly(year == null ? LocalDate.now().getYear() : year, month, userId, accountId);
+        Role userType = parseRole(firstNonNull(params, "userType"));
+        return statisticsService.getYearly(year == null ? LocalDate.now().getYear() : year, month, userId, userType, accountId);
     }
 
     private String firstNonNull(Map<String, String> params, String... keys) {
@@ -60,6 +62,17 @@ public class StatisticsController {
         try {
             return Long.valueOf(value);
         } catch (NumberFormatException exception) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid filter value");
+        }
+    }
+
+    private Role parseRole(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Role.valueOf(value);
+        } catch (IllegalArgumentException exception) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Invalid filter value");
         }
     }

@@ -412,9 +412,7 @@ public class AccountService {
     }
 
     public BigDecimal getCalculatedBalance(Account account) {
-        return transactionRepository.calculateBalance(account)
-                .add(accountBalanceAdjustmentRepository.calculateAdjustmentBalance(account))
-                .add(normalizeMoney(account.getInitialBalance()));
+        return transactionRepository.calculateAccurateBalance(account.getId());
     }
 
     private BigDecimal normalizeMoney(BigDecimal value) {

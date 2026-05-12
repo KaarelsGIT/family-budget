@@ -41,7 +41,7 @@ public class Account {
     @Column(nullable = false, length = 20)
     private AccountType type;
 
-    @Column(precision = 19, scale = 2)
+    @Column(precision = 19, scale = 4)
     private BigDecimal initialBalance = BigDecimal.ZERO;
 
     @OneToMany(mappedBy = "account", cascade = CascadeType.ALL, orphanRemoval = true)

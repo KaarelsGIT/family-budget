@@ -29,7 +29,7 @@ public class AccountBalanceAdjustment {
     @JoinColumn(name = "account_id", nullable = false)
     private Account account;
 
-    @Column(nullable = false, precision = 19, scale = 2)
+    @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;
 
     @Column(nullable = false, length = 500)

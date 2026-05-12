@@ -1,5 +1,6 @@
 package ee.kaarel.familybudgetapplication.dto.category;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import ee.kaarel.familybudgetapplication.model.CategoryGroup;
 import ee.kaarel.familybudgetapplication.model.TransactionType;
 import java.math.BigDecimal;
@@ -17,6 +18,7 @@ public record CategoryResponse(
         @Deprecated
         Integer dueDayOfMonth,
         @Deprecated
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
         BigDecimal recurringAmount
 ) {
 }

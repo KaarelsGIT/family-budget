@@ -59,18 +59,19 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public TransactionListResponse getTransactions(
-            Pageable pageable, String sort, Long userId, Long categoryId,
-            Long mainCategoryId, Long subCategoryId, TransactionType type,
+            Pageable pageable, String sort, Long userId, Role userType, Long categoryId,
+            Long mainCategoryId, Long subCategoryId, List<TransactionType> types,
             LocalDate from, LocalDate to
     ) {
         User currentUser = currentUserService.getCurrentUser();
         Long effectiveUserId = userId != null ? userId : currentUser.getId();
+        Role effectiveUserType = resolveUserType(currentUser, userType);
 
         Sort parsedSort = parseSort(sort, pageable.getSort());
         Pageable sorted = PageableUtils.withDefaultSort(pageable, parsedSort);
 
         // 1. Teeme kindlaks, et Specification ei oleks liiga range
-        Specification<Transaction> spec = visibleTransactions(currentUser, effectiveUserId, categoryId, mainCategoryId, subCategoryId, type, from, to);
+        Specification<Transaction> spec = visibleTransactions(currentUser, effectiveUserId, effectiveUserType, categoryId, mainCategoryId, subCategoryId, types, from, to);
 
         // 2. Võtame lehekülje andmed
         Page<Transaction> page = transactionRepository.findAll(spec, sorted);
@@ -490,18 +491,22 @@ public class TransactionService {
     }
 
     private Specification<Transaction> visibleTransactions(
-            User currentUser, Long userId, Long catId, Long mCatId, Long sCatId,
-            TransactionType type, LocalDate from, LocalDate to
+            User currentUser, Long userId, Role userType, Long catId, Long mCatId, Long sCatId,
+            List<TransactionType> types, LocalDate from, LocalDate to
     ) {
         return (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
 
-            // 1. Kasutaja filter (vastab baasi veerule created_by_id)
-            predicates.add(cb.equal(root.get("createdBy").get("id"), userId));
+            if (userType != null) {
+                predicates.add(cb.equal(root.get("createdBy").get("role"), userType));
+                predicates.add(cb.equal(root.get("createdBy").get("familyId"), currentUser.getFamilyId()));
+            } else {
+                predicates.add(cb.equal(root.get("createdBy").get("id"), userId));
+            }
 
             // 2. Tüübi filter
-            if (type != null) {
-                predicates.add(cb.equal(root.get("type"), type));
+            if (types != null && !types.isEmpty()) {
+                predicates.add(root.get("type").in(types));
             }
 
             // 3. Kuupäeva filter
@@ -523,6 +528,13 @@ public class TransactionService {
 
             return cb.and(predicates.toArray(new jakarta.persistence.criteria.Predicate[0]));
         };
+    }
+
+    private Role resolveUserType(User currentUser, Role requestedUserType) {
+        if (requestedUserType == null || currentUser.getRole() == Role.CHILD) {
+            return null;
+        }
+        return requestedUserType == Role.ADMIN ? null : requestedUserType;
     }
 
     private Sort parseSort(String sortParam, Sort incomingSort) {

@@ -44,7 +44,7 @@ public class StatisticsService {
     }
 
     @Transactional(readOnly = true)
-    public YearlyStatisticsResponse getYearly(Integer year, Integer monthFilter, Long userId, Long accountId) {
+    public YearlyStatisticsResponse getYearly(Integer year, Integer monthFilter, Long userId, Role userType, Long accountId) {
         User currentUser = currentUserService.getCurrentUser();
         int effectiveYear = year != null ? year : LocalDate.now().getYear();
         if (userId != null && currentUser.getRole() == Role.CHILD && !currentUser.getId().equals(userId)) {
@@ -54,6 +54,7 @@ public class StatisticsService {
         if (userId != null && currentUser.getRole() != Role.CHILD) {
             userService.ensureSelectableUser(currentUser, effectiveUser);
         }
+        Role effectiveUserType = resolveUserType(currentUser, userType);
 
         List<Long> visibleAccountIds = accountService.getVisibleAccounts(currentUser).stream()
                 .map(Account::getId)
@@ -76,6 +77,7 @@ public class StatisticsService {
                 effectiveYear,
                 monthFilter,
                 queryUserId,
+                effectiveUserType,
                 accountId,
                 visibleAccountIds
         );
@@ -215,6 +217,13 @@ public class StatisticsService {
                 accountEntries,
                 new YearlyStatisticsResponse.Transfers(transfersTotalAmount, transfersCount, transferMonthlyEntries)
         );
+    }
+
+    private Role resolveUserType(User currentUser, Role requestedUserType) {
+        if (requestedUserType == null || currentUser.getRole() == Role.CHILD) {
+            return null;
+        }
+        return requestedUserType == Role.ADMIN ? null : requestedUserType;
     }
 
     private YearlyStatisticsResponse emptyStatistics(int year) {

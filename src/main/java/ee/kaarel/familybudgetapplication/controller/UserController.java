@@ -2,6 +2,7 @@ package ee.kaarel.familybudgetapplication.controller;
 
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
+import ee.kaarel.familybudgetapplication.dto.user.UpdateFamilyDashboardSelectionRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.service.UserService;
 import jakarta.validation.Valid;
@@ -44,5 +45,15 @@ public class UserController {
     public ApiResponse<?> deleteUser(@PathVariable Long id) {
         userService.deleteUser(id);
         return new ApiResponse<>("User deleted successfully");
+    }
+
+    @GetMapping("/me/family-dashboard-selection")
+    public ApiResponse<?> getFamilyDashboardSelection() {
+        return new ApiResponse<>(userService.getFamilyDashboardSelection());
+    }
+
+    @PutMapping("/me/family-dashboard-selection")
+    public ApiResponse<?> updateFamilyDashboardSelection(@Valid @RequestBody UpdateFamilyDashboardSelectionRequest request) {
+        return new ApiResponse<>(userService.updateFamilyDashboardSelection(request.selectedUserIds()));
     }
 }

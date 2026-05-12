@@ -45,6 +45,9 @@ public class User {
     @Column(nullable = false, length = 5)
     private String preferredLanguage = "et";
 
+    @Column(name = "family_dashboard_selection", length = 2000)
+    private String familyDashboardSelection;
+
     @OneToMany(mappedBy = "owner", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Account> accounts = new ArrayList<>();
 
