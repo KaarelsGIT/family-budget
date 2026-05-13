@@ -50,9 +50,12 @@ public class StatisticsService {
         if (userId != null && currentUser.getRole() == Role.CHILD && !currentUser.getId().equals(userId)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot view statistics for this user");
         }
-        User effectiveUser = userId == null ? currentUser : userService.findUser(userId);
-        if (userId != null && currentUser.getRole() != Role.CHILD) {
-            userService.ensureSelectableUser(currentUser, effectiveUser);
+
+        if (userId != null) {
+            User effectiveUser = userService.findUser(userId);
+            if (currentUser.getRole() != Role.CHILD) {
+                userService.ensureSelectableUser(currentUser, effectiveUser);
+            }
         }
         Role effectiveUserType = resolveUserType(currentUser, userType);
 

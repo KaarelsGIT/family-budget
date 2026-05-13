@@ -55,11 +55,11 @@ class StatisticsServiceTest {
 
         when(currentUserService.getCurrentUser()).thenReturn(currentUser);
         when(accountService.getVisibleAccounts(currentUser)).thenReturn(List.of(visibleAccount));
-        when(transactionRepository.findYearlyStatisticsRows(eq(2026), eq(1L), isNull(), any())).thenReturn(List.of());
+        when(transactionRepository.findYearlyStatisticsRows(eq(2026), isNull(), isNull(), isNull(), isNull(), any())).thenReturn(List.of());
 
-        YearlyStatisticsResponse response = statisticsService.getYearly(2026, null, null);
+        YearlyStatisticsResponse response = statisticsService.getYearly(2026, null, null, null, null);
 
-        verify(transactionRepository).findYearlyStatisticsRows(2026, 1L, null, List.of(visibleAccount.getId()));
+        verify(transactionRepository).findYearlyStatisticsRows(eq(2026), isNull(), isNull(), isNull(), isNull(), eq(List.of(visibleAccount.getId())));
         Assertions.assertEquals(2026, response.year());
         Assertions.assertEquals(0, response.totals().income().compareTo(BigDecimal.ZERO));
     }
@@ -74,7 +74,7 @@ class StatisticsServiceTest {
 
         when(currentUserService.getCurrentUser()).thenReturn(currentUser);
 
-        ApiException exception = assertThrows(ApiException.class, () -> statisticsService.getYearly(2026, otherUser.getId(), null));
+        ApiException exception = assertThrows(ApiException.class, () -> statisticsService.getYearly(2026, null, otherUser.getId(), null, null));
 
         Assertions.assertEquals(HttpStatus.FORBIDDEN, exception.getStatus());
     }
@@ -101,9 +101,9 @@ class StatisticsServiceTest {
                 new YearlyStatisticsRow(1, TransactionType.TRANSFER, 20L, "Savings", AccountType.SAVINGS, 10L, "Main", AccountType.MAIN, null, null, null, null, new BigDecimal("100.00"), 1L)
         );
 
-        when(transactionRepository.findYearlyStatisticsRows(eq(2026), eq(1L), isNull(), any())).thenReturn(rows);
+        when(transactionRepository.findYearlyStatisticsRows(eq(2026), isNull(), isNull(), isNull(), isNull(), any())).thenReturn(rows);
 
-        YearlyStatisticsResponse response = statisticsService.getYearly(2026, null, null);
+        YearlyStatisticsResponse response = statisticsService.getYearly(2026, null, null, null, null);
 
         assertEquals(0, new BigDecimal("1000.00").compareTo(response.totals().income()));
         assertEquals(0, new BigDecimal("200.00").compareTo(response.totals().expenses()));

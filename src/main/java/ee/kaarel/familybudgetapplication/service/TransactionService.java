@@ -64,7 +64,10 @@ public class TransactionService {
             LocalDate from, LocalDate to
     ) {
         User currentUser = currentUserService.getCurrentUser();
-        Long effectiveUserId = userId != null ? userId : currentUser.getId();
+        Long effectiveUserId = userId;
+        if (currentUser.getRole() == Role.CHILD && effectiveUserId == null) {
+            effectiveUserId = currentUser.getId();
+        }
         Role effectiveUserType = resolveUserType(currentUser, userType);
 
         Sort parsedSort = parseSort(sort, pageable.getSort());
@@ -500,8 +503,10 @@ public class TransactionService {
             if (userType != null) {
                 predicates.add(cb.equal(root.get("createdBy").get("role"), userType));
                 predicates.add(cb.equal(root.get("createdBy").get("familyId"), currentUser.getFamilyId()));
-            } else {
+            } else if (userId != null) {
                 predicates.add(cb.equal(root.get("createdBy").get("id"), userId));
+            } else {
+                predicates.add(cb.equal(root.get("createdBy").get("familyId"), currentUser.getFamilyId()));
             }
 
             // 2. Tüübi filter
