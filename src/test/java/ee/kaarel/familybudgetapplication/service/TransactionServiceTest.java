@@ -4,6 +4,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -215,6 +216,49 @@ class TransactionServiceTest {
                 eq(BigDecimal.valueOf(25)),
                 eq("Source"),
                 any()
+        );
+    }
+
+    @Test
+    void createExpenseMicroSavingsUsesMinimumOneEuroForWholeEuroAmount() {
+        User actor = createUser(1L, "John", 100L);
+        Account account = createAccount(10L, actor, "Source");
+        Category category = createCategory(20L, actor, "Utilities", TransactionType.EXPENSE);
+
+        when(currentUserService.getCurrentUser()).thenReturn(actor);
+        when(categoryService.getCategory(category.getId())).thenReturn(category);
+        when(accountService.getAccountForUpdate(account.getId())).thenReturn(account);
+        doNothing().when(accountService).ensureCanAccessAccount(eq(actor), eq(account));
+        when(accountService.canTransactFromAccount(actor, account)).thenReturn(true);
+        when(accountService.getCalculatedBalance(account)).thenReturn(BigDecimal.valueOf(100));
+        Account savingsAccount = createAccount(11L, actor, "Savings");
+        when(accountService.getSavingsAccountForUser(actor)).thenReturn(savingsAccount);
+        when(transactionRepository.save(any(Transaction.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = transactionService.create(
+                new ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest(
+                        BigDecimal.valueOf(25),
+                        TransactionType.EXPENSE,
+                        account.getId(),
+                        null,
+                        null,
+                        category.getId(),
+                        LocalDate.now(),
+                        "Expense with micro-savings",
+                        null,
+                        true,
+                        2
+                )
+        );
+
+        assertEquals(BigDecimal.valueOf(2), response.microSavingsAmount());
+        verify(notificationService).notifySharedAccountTransactionUsers(
+                eq(account),
+                eq(actor),
+                eq(TransactionType.EXPENSE),
+                eq(BigDecimal.valueOf(25)),
+                any(),
+                eq(NotificationType.TRANSACTION_CREATED)
         );
     }
 

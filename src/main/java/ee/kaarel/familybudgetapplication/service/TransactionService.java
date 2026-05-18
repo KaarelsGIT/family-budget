@@ -362,7 +362,7 @@ public class TransactionService {
     private BigDecimal calculateMicroSavingsAmount(BigDecimal amount) {
         BigDecimal remainder = amount.remainder(BigDecimal.ONE);
         if (remainder.compareTo(BigDecimal.ZERO) == 0) {
-            return BigDecimal.ZERO;
+            return BigDecimal.ONE;
         }
         return BigDecimal.ONE.subtract(remainder);
     }
