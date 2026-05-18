@@ -249,11 +249,27 @@ public class TransactionService {
         }
 
         transaction.setAmount(request.amount());
+        if (transaction.getType() != TransactionType.TRANSFER) {
+            if (request.categoryId() == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "Category is required");
+            }
+            Category category = categoryService.getCategory(request.categoryId());
+            categoryService.ensureVisible(currentUser, category);
+            validateCategoryType(category, transaction.getType());
+            transaction.setCategory(category);
+        }
         transaction.setTransactionDate(request.transactionDate());
         transaction.setComment(request.comment());
 
         Transaction saved = transactionRepository.save(transaction);
-        notifySharedAccountTransactionIfNeeded(getTransactionAccount(saved), saved.getType(), saved.getAmount(), saved.getId(), NotificationType.TRANSACTION_UPDATED);
+        notifySharedAccountTransactionIfNeeded(
+                getTransactionAccount(saved),
+                saved.getType(),
+                saved.getAmount(),
+                saved.getId(),
+                NotificationType.TRANSACTION_UPDATED,
+                saved.getCategory() != null ? saved.getCategory().getName() : null
+        );
         return toResponse(saved);
     }
 
@@ -437,7 +453,11 @@ public class TransactionService {
     }
 
     private void notifySharedAccountTransactionIfNeeded(Account acc, TransactionType type, BigDecimal amt, Long id, NotificationType nType) {
-        notificationService.notifySharedAccountTransactionUsers(acc, currentUserService.getCurrentUser(), type, amt, id, nType);
+        notifySharedAccountTransactionIfNeeded(acc, type, amt, id, nType, null);
+    }
+
+    private void notifySharedAccountTransactionIfNeeded(Account acc, TransactionType type, BigDecimal amt, Long id, NotificationType nType, String categoryName) {
+        notificationService.notifySharedAccountTransactionUsers(acc, currentUserService.getCurrentUser(), type, amt, id, nType, categoryName);
     }
 
     private void rejectDuplicateSubmission(User user, CreateTransactionRequest request) {

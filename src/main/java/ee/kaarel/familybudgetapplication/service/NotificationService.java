@@ -198,6 +198,19 @@ public class NotificationService {
             Long transactionId,
             NotificationType notificationType
     ) {
+        notifySharedAccountTransactionUsers(account, actor, transactionType, amount, transactionId, notificationType, null);
+    }
+
+    @Transactional
+    public void notifySharedAccountTransactionUsers(
+            Account account,
+            User actor,
+            TransactionType transactionType,
+            BigDecimal amount,
+            Long transactionId,
+            NotificationType notificationType,
+            String categoryName
+    ) {
         List<AccountUser> accountUsers = accountUserRepository.findAllByAccount(account);
         accountUsers.stream()
                 .map(AccountUser::getUser)
@@ -210,7 +223,8 @@ public class NotificationService {
                         transactionType,
                         amount,
                         transactionId,
-                        notificationType
+                        notificationType,
+                        categoryName
                 ));
     }
 
@@ -364,16 +378,18 @@ public class NotificationService {
             BigDecimal amount,
             Long transactionId,
             Long relatedAccountId,
-            NotificationType notificationType
+            NotificationType notificationType,
+            String categoryName
     ) {
         String preferredLanguage = resolvePreferredLanguage(recipient);
         String formattedAmount = formatCurrency(preferredLanguage, amount);
         String transactionText = localizeTransactionType(transactionType, preferredLanguage);
         String actionText = localizeTransactionAction(notificationType, preferredLanguage);
+        String categoryText = categoryName == null || categoryName.isBlank() ? "" : " · " + categoryName;
         return switch (preferredLanguage) {
-            case "en" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " from " + accountName;
-            case "fi" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " tililtä " + accountName;
-            default -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " kontolt " + accountName;
+            case "en" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " from " + accountName + categoryText;
+            case "fi" -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " tililtä " + accountName + categoryText;
+            default -> actorUsername + " " + actionText + " " + transactionText + " " + formattedAmount + " kontolt " + accountName + categoryText;
         };
     }
 
@@ -395,7 +411,8 @@ public class NotificationService {
                 amount,
                 transactionId,
                 account.getId(),
-                notificationType
+                notificationType,
+                null
         );
 
         Notification notification = notificationRepository

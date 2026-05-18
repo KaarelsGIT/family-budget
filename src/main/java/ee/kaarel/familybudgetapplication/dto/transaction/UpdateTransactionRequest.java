@@ -11,6 +11,7 @@ public record UpdateTransactionRequest(
         Long fromAccountId,
         Long toAccountId,
         Long targetUserId,
+        Long categoryId,
         @NotNull LocalDate transactionDate,
         @Size(max = 500) String comment
 ) {
