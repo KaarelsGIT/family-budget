@@ -18,6 +18,9 @@ public record AccountResponse(
         boolean deletionRequested,
         @JsonFormat(shape = JsonFormat.Shape.STRING)
         BigDecimal balance,
+        @JsonFormat(shape = JsonFormat.Shape.STRING)
+        BigDecimal targetAmount,
+        String targetDate,
         AccountUserRole accessRole,
         List<AccountShareResponse> sharedUsers
 ) {

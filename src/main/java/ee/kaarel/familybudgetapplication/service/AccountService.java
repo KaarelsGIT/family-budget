@@ -8,6 +8,7 @@ import ee.kaarel.familybudgetapplication.dto.account.CreateAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.AccountShareResponse;
 import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
+import ee.kaarel.familybudgetapplication.dto.account.UpdateSavingsGoalRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetUserResponse;
 import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
@@ -102,6 +103,8 @@ public class AccountService {
         account.setName(request.name());
         account.setOwner(currentUser);
         account.setType(request.type());
+        account.setTargetAmount(request.targetAmount());
+        account.setTargetDate(request.targetDate());
         account.setDefault(false);
         account.setDeletionRequested(false);
         account.setDeletionRequestedAt(null);
@@ -182,6 +185,25 @@ public class AccountService {
         }
 
         account.setName(request.name());
+        return toResponse(accountRepository.save(account));
+    }
+
+    @Transactional
+    public AccountResponse updateSavingsGoal(Long id, UpdateSavingsGoalRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+        Account account = getAccount(id);
+        ensureCanAccessAccount(currentUser, account);
+
+        if (account.getType() != AccountType.SAVINGS) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Savings goal can only be set for savings accounts");
+        }
+
+        if (!canRenameAccount(currentUser, account)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "You cannot update this account goal");
+        }
+
+        account.setTargetAmount(request.targetAmount());
+        account.setTargetDate(request.targetDate());
         return toResponse(accountRepository.save(account));
     }
 
@@ -406,6 +428,8 @@ public class AccountService {
                 account.isDefault(),
                 account.isDeletionRequested(),
                 balance,
+                account.getTargetAmount(),
+                account.getTargetDate(),
                 accessRole,
                 buildSharedUsers(account)
         );

@@ -5,6 +5,7 @@ import ee.kaarel.familybudgetapplication.dto.account.AdjustBalanceRequest;
 import ee.kaarel.familybudgetapplication.dto.account.AccountBalanceAdjustmentResponse;
 import ee.kaarel.familybudgetapplication.dto.account.ShareAccountRequest;
 import ee.kaarel.familybudgetapplication.dto.account.UpdateAccountRequest;
+import ee.kaarel.familybudgetapplication.dto.account.UpdateSavingsGoalRequest;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transfer.TransferTargetsResponse;
@@ -57,6 +58,12 @@ public class AccountController {
     public ApiResponse<?> updateAccount(@PathVariable Long id, @Valid @RequestBody UpdateAccountRequest request) {
         logCurrentUser("PUT /api/accounts/" + id);
         return new ApiResponse<>(accountService.updateAccount(id, request));
+    }
+
+    @PatchMapping("/{id}/savings-goal")
+    public ApiResponse<?> updateSavingsGoal(@PathVariable Long id, @Valid @RequestBody UpdateSavingsGoalRequest request) {
+        logCurrentUser("PATCH /api/accounts/" + id + "/savings-goal");
+        return new ApiResponse<>(accountService.updateSavingsGoal(id, request));
     }
 
     @PatchMapping("/{id}/adjust-balance")
