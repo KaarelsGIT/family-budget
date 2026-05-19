@@ -184,7 +184,8 @@ public class NotificationService {
                         amount,
                         null,
                         null,
-                        NotificationType.SHARED_ACCOUNT_TRANSACTION
+                        NotificationType.SHARED_ACCOUNT_TRANSACTION,
+                        null
                 )
         );
     }
@@ -401,7 +402,8 @@ public class NotificationService {
             TransactionType transactionType,
             BigDecimal amount,
             Long transactionId,
-            NotificationType notificationType
+            NotificationType notificationType,
+            String categoryName
     ) {
         String message = localizeTransactionActivityMessage(
                 recipient,
@@ -412,7 +414,7 @@ public class NotificationService {
                 transactionId,
                 account.getId(),
                 notificationType,
-                null
+                categoryName
         );
 
         Notification notification = notificationRepository
