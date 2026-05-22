@@ -194,11 +194,12 @@ public class AccountService {
         Account account = getAccount(id);
         ensureCanAccessAccount(currentUser, account);
 
-        if (account.getType() != AccountType.SAVINGS) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "Savings goal can only be set for savings accounts");
+        if (account.getType() != AccountType.SAVINGS && account.getType() != AccountType.CASH) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Savings goal can only be set for savings and cash accounts");
         }
 
-        if (!canRenameAccount(currentUser, account)) {
+        AccountUserRole role = getAccountRole(currentUser, account);
+        if (!account.getOwner().getId().equals(currentUser.getId()) && role != AccountUserRole.EDITOR && currentUser.getRole() != Role.ADMIN) {
             throw new ApiException(HttpStatus.FORBIDDEN, "You cannot update this account goal");
         }
 
