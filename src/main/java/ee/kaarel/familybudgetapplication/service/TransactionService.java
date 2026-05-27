@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.transaction.TransactionDuplicateCheckResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionCreateResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionResponse;
@@ -116,6 +117,40 @@ public class TransactionService {
     @Transactional
     public TransactionCreateResponse create(CreateTransactionRequest request) {
         return createInternal(currentUserService.getCurrentUser(), request);
+    }
+
+    @Transactional(readOnly = true)
+    public TransactionDuplicateCheckResponse findPossibleDuplicates(CreateTransactionRequest request) {
+        User currentUser = currentUserService.getCurrentUser();
+
+        if (request.type() == null || request.categoryId() == null || request.transactionDate() == null || request.amount() == null) {
+            return new TransactionDuplicateCheckResponse(false, List.of());
+        }
+
+        if (request.type() == TransactionType.TRANSFER) {
+            return new TransactionDuplicateCheckResponse(false, List.of());
+        }
+
+        Category category = categoryService.getCategory(request.categoryId());
+        categoryService.ensureVisible(currentUser, category);
+        validateCategoryType(category, request.type());
+
+        LocalDate from = request.transactionDate().minusDays(14);
+        LocalDate to = request.transactionDate().plusDays(14);
+        List<TransactionResponse> matches = transactionRepository
+                .findAllByCreatedByAndTypeAndCategoryAndAmountAndTransactionDateBetweenOrderByTransactionDateDescCreatedAtDesc(
+                        currentUser,
+                        request.type(),
+                        category,
+                        request.amount(),
+                        from,
+                        to
+                )
+                .stream()
+                .map(this::toResponse)
+                .toList();
+
+        return new TransactionDuplicateCheckResponse(!matches.isEmpty(), matches);
     }
 
     /**

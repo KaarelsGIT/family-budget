@@ -255,6 +255,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, Long>,
             OffsetDateTime createdAt
     );
 
+    List<Transaction> findAllByCreatedByAndTypeAndCategoryAndAmountAndTransactionDateBetweenOrderByTransactionDateDescCreatedAtDesc(
+            User createdBy,
+            TransactionType type,
+            Category category,
+            BigDecimal amount,
+            LocalDate from,
+            LocalDate to
+    );
+
     interface BalanceAuditRow {
         BigDecimal getInitialBalance();
         Long getEventId();

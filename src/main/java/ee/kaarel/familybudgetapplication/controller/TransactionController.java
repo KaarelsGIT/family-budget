@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.controller;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.common.ListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.CreateTransactionRequest;
+import ee.kaarel.familybudgetapplication.dto.transaction.TransactionDuplicateCheckResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionCreateResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.TransactionListResponse;
 import ee.kaarel.familybudgetapplication.dto.transaction.UpdateTransactionRequest;
@@ -56,6 +57,11 @@ public class TransactionController {
     @PostMapping
     public ApiResponse<TransactionCreateResponse> createTransaction(@Valid @RequestBody CreateTransactionRequest request) {
         return new ApiResponse<>(transactionService.create(request));
+    }
+
+    @PostMapping("/duplicate-check")
+    public ApiResponse<TransactionDuplicateCheckResponse> checkDuplicateTransaction(@Valid @RequestBody CreateTransactionRequest request) {
+        return new ApiResponse<>(transactionService.findPossibleDuplicates(request));
     }
 
     @PutMapping("/{id}")
