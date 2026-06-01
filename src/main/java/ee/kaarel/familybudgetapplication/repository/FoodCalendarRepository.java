@@ -7,4 +7,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface FoodCalendarRepository extends JpaRepository<FoodCalendarEntry, Long> {
     List<FoodCalendarEntry> findAllByDateBetweenOrderByDateAsc(LocalDate from, LocalDate to);
+    void deleteByRecipeId(Long recipeId);
 }

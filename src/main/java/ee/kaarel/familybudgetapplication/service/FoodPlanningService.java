@@ -94,7 +94,10 @@ public class FoodPlanningService {
 
     @Transactional
     public void deleteRecipe(Long id) {
-        recipeRepository.delete(getRecipeEntity(id));
+        getRecipeEntity(id);
+        foodCalendarRepository.deleteByRecipeId(id);
+        foodRatingRepository.deleteByRecipeId(id);
+        recipeRepository.deleteById(id);
     }
 
     @Transactional(readOnly = true)
