@@ -1,5 +1,7 @@
 package ee.kaarel.familybudgetapplication.model;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -24,4 +26,10 @@ public class FamilySavingsSelection {
 
     @Column(name = "selected_account_ids", nullable = false, length = 2000)
     private String selectedAccountIds = "";
+
+    @Column(name = "target_amount")
+    private BigDecimal targetAmount;
+
+    @Column(name = "target_date")
+    private LocalDate targetDate;
 }

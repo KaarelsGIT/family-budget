@@ -65,6 +65,6 @@ public class UserController {
 
     @PutMapping("/me/family-savings-selection")
     public ApiResponse<?> updateFamilySavingsSelection(@Valid @RequestBody UpdateFamilySavingsSelectionRequest request) {
-        return new ApiResponse<>(userService.updateFamilySavingsSelection(request.selectedAccountIds()));
+        return new ApiResponse<>(userService.updateFamilySavingsSelection(request));
     }
 }

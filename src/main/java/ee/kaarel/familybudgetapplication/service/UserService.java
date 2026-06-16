@@ -2,6 +2,8 @@ package ee.kaarel.familybudgetapplication.service;
 
 import ee.kaarel.familybudgetapplication.appConfig.ApiException;
 import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
+import ee.kaarel.familybudgetapplication.dto.user.FamilySavingsSelectionResponse;
+import ee.kaarel.familybudgetapplication.dto.user.UpdateFamilySavingsSelectionRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UserResponse;
 import java.util.Collections;
@@ -211,25 +213,35 @@ public class UserService {
     }
 
     @Transactional(readOnly = true)
-    public List<Long> getFamilySavingsSelection() {
+    public FamilySavingsSelectionResponse getFamilySavingsSelection() {
         User currentUser = currentUserService.getCurrentUser();
         ensureFamilySavingsAccess(currentUser);
         return familySavingsSelectionRepository.findByFamilyId(currentUser.getFamilyId())
-                .map(selection -> parseSelection(selection.getSelectedAccountIds()))
-                .orElse(Collections.emptyList());
+                .map(selection -> new FamilySavingsSelectionResponse(
+                        parseSelection(selection.getSelectedAccountIds()),
+                        selection.getTargetAmount(),
+                        selection.getTargetDate()
+                ))
+                .orElse(new FamilySavingsSelectionResponse(Collections.emptyList(), null, null));
     }
 
     @Transactional
-    public List<Long> updateFamilySavingsSelection(List<Long> selectedAccountIds) {
+    public FamilySavingsSelectionResponse updateFamilySavingsSelection(UpdateFamilySavingsSelectionRequest request) {
         User currentUser = currentUserService.getCurrentUser();
         ensureFamilySavingsAccess(currentUser);
         Long familyId = currentUser.getFamilyId();
         ee.kaarel.familybudgetapplication.model.FamilySavingsSelection selection = familySavingsSelectionRepository.findByFamilyId(familyId)
                 .orElseGet(ee.kaarel.familybudgetapplication.model.FamilySavingsSelection::new);
         selection.setFamilyId(familyId);
-        selection.setSelectedAccountIds(serializeSelection(selectedAccountIds));
+        selection.setSelectedAccountIds(serializeSelection(request.selectedAccountIds()));
+        selection.setTargetAmount(request.targetAmount());
+        selection.setTargetDate(request.targetDate());
         familySavingsSelectionRepository.save(selection);
-        return parseSelection(selection.getSelectedAccountIds());
+        return new FamilySavingsSelectionResponse(
+                parseSelection(selection.getSelectedAccountIds()),
+                selection.getTargetAmount(),
+                selection.getTargetDate()
+        );
     }
 
     @Transactional
