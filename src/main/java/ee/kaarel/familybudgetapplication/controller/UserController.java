@@ -3,6 +3,7 @@ package ee.kaarel.familybudgetapplication.controller;
 import ee.kaarel.familybudgetapplication.dto.common.ApiResponse;
 import ee.kaarel.familybudgetapplication.dto.user.CreateUserRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateFamilyDashboardSelectionRequest;
+import ee.kaarel.familybudgetapplication.dto.user.UpdateFamilySavingsSelectionRequest;
 import ee.kaarel.familybudgetapplication.dto.user.UpdateUserRequest;
 import ee.kaarel.familybudgetapplication.service.UserService;
 import jakarta.validation.Valid;
@@ -55,5 +56,15 @@ public class UserController {
     @PutMapping("/me/family-dashboard-selection")
     public ApiResponse<?> updateFamilyDashboardSelection(@Valid @RequestBody UpdateFamilyDashboardSelectionRequest request) {
         return new ApiResponse<>(userService.updateFamilyDashboardSelection(request.selectedUserIds()));
+    }
+
+    @GetMapping("/me/family-savings-selection")
+    public ApiResponse<?> getFamilySavingsSelection() {
+        return new ApiResponse<>(userService.getFamilySavingsSelection());
+    }
+
+    @PutMapping("/me/family-savings-selection")
+    public ApiResponse<?> updateFamilySavingsSelection(@Valid @RequestBody UpdateFamilySavingsSelectionRequest request) {
+        return new ApiResponse<>(userService.updateFamilySavingsSelection(request.selectedAccountIds()));
     }
 }

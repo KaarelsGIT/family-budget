@@ -12,6 +12,7 @@ import ee.kaarel.familybudgetapplication.model.Role;
 import ee.kaarel.familybudgetapplication.model.User;
 import ee.kaarel.familybudgetapplication.model.UserStatus;
 import ee.kaarel.familybudgetapplication.repository.AccountRepository;
+import ee.kaarel.familybudgetapplication.repository.FamilySavingsSelectionRepository;
 import ee.kaarel.familybudgetapplication.repository.NotificationRepository;
 import ee.kaarel.familybudgetapplication.repository.TransactionRepository;
 import ee.kaarel.familybudgetapplication.repository.UserRepository;
@@ -34,6 +35,7 @@ public class UserService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final NotificationRepository notificationRepository;
+    private final FamilySavingsSelectionRepository familySavingsSelectionRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUserService;
     private final AccountService accountService;
@@ -43,6 +45,7 @@ public class UserService {
             AccountRepository accountRepository,
             TransactionRepository transactionRepository,
             NotificationRepository notificationRepository,
+            FamilySavingsSelectionRepository familySavingsSelectionRepository,
             PasswordEncoder passwordEncoder,
             CurrentUserService currentUserService,
             AccountService accountService
@@ -51,6 +54,7 @@ public class UserService {
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.notificationRepository = notificationRepository;
+        this.familySavingsSelectionRepository = familySavingsSelectionRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUserService = currentUserService;
         this.accountService = accountService;
@@ -206,6 +210,28 @@ public class UserService {
         return parseSelection(currentUser.getFamilyDashboardSelection());
     }
 
+    @Transactional(readOnly = true)
+    public List<Long> getFamilySavingsSelection() {
+        User currentUser = currentUserService.getCurrentUser();
+        ensureFamilySavingsAccess(currentUser);
+        return familySavingsSelectionRepository.findByFamilyId(currentUser.getFamilyId())
+                .map(selection -> parseSelection(selection.getSelectedAccountIds()))
+                .orElse(Collections.emptyList());
+    }
+
+    @Transactional
+    public List<Long> updateFamilySavingsSelection(List<Long> selectedAccountIds) {
+        User currentUser = currentUserService.getCurrentUser();
+        ensureFamilySavingsAccess(currentUser);
+        Long familyId = currentUser.getFamilyId();
+        ee.kaarel.familybudgetapplication.model.FamilySavingsSelection selection = familySavingsSelectionRepository.findByFamilyId(familyId)
+                .orElseGet(ee.kaarel.familybudgetapplication.model.FamilySavingsSelection::new);
+        selection.setFamilyId(familyId);
+        selection.setSelectedAccountIds(serializeSelection(selectedAccountIds));
+        familySavingsSelectionRepository.save(selection);
+        return parseSelection(selection.getSelectedAccountIds());
+    }
+
     @Transactional
     public void deleteUser(Long id) {
         User currentUser = currentUserService.getCurrentUser();
@@ -253,6 +279,12 @@ public class UserService {
     private void validatePreferredLanguage(String preferredLanguage) {
         if (!"et".equals(preferredLanguage) && !"en".equals(preferredLanguage) && !"fi".equals(preferredLanguage)) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "Unsupported language");
+        }
+    }
+
+    private void ensureFamilySavingsAccess(User currentUser) {
+        if (currentUser.getRole() != Role.ADMIN && currentUser.getRole() != Role.PARENT) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "Only parents can manage family savings");
         }
     }
 
