@@ -79,7 +79,7 @@ class TransactionServiceTest {
 
         transactionService.update(
                 transaction.getId(),
-                new UpdateTransactionRequest(BigDecimal.valueOf(25), null, null, null, LocalDate.now(), "Updated comment")
+                new UpdateTransactionRequest(BigDecimal.valueOf(25), null, null, null, null, LocalDate.now(), "Updated comment")
         );
 
         verify(notificationService).notifySharedAccountTransactionUsers(
@@ -140,6 +140,7 @@ class TransactionServiceTest {
                         fromAccount.getId(),
                         null,
                         recipient.getId(),
+                        null,
                         LocalDate.now(),
                         "Updated transfer"
                 )
